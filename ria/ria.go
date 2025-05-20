@@ -1,4 +1,4 @@
-package ria
+package main
 
 import (
 	"fmt"
@@ -39,37 +39,13 @@ func main() {
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", colorYellow, formatDuration(totalElapsedTime), colorReset)
 }
 
-// get_html загружает HTML-страницу по указанному URL и парсит ее
-func get_html(pageUrl string) (*html.Node, error) {
-	// Выполняет HTTP GET запрос по указанному URL
-	resp, err := http.Get(pageUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	// defer гарантирует, что тело ответа будет закрыто перед выходом из функции
-	defer resp.Body.Close()
-
-	// Проверяет, успешен ли HTTP-статус ответа (код 200 OK)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ошибка при получении страницы %s: %s", pageUrl, resp.Status)
-	}
-
-	// Парсит (разбирает) тело ответа (HTML-документ) в дерево узлов
-	doc, err := html.Parse(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
-	}
-
-	return doc, nil
-}
-
 func parsing_links() []Data {
 	// URL ленты новостей
-	URL := "https://ria.ru/lenta/"
+	ria_url := "https://ria.ru/lenta/"
 
-	// Срезы для хранения найденных ссылок и времени публикации статей
+	// Срез для хранения найденных ссылок
 	var found_links []string
+	// Переменная для хранения времени публикации статей
 	var found_time string
 	var itr int16 = 0
 
@@ -170,9 +146,9 @@ func parsing_links() []Data {
 	fmt.Println("\nНачало парсинга ссылок...")
 
 	// Получаем HTML-документ ленты новостей
-	doc, err := get_html(URL)
+	doc, err := get_html(ria_url)
 	if err != nil {
-		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", URL, err)
+		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", ria_url, err)
 	}
 
 	// Первичное приминение функций
@@ -191,7 +167,7 @@ func parsing_links() []Data {
 		// Парсинг доп ссылки
 		doc, err := get_html("https://ria.ru/services/lenta/more.html?id=" + found_links[len(found_links)-1][(len(found_links[len(found_links)-1])-15):(len(found_links[len(found_links)-1])-5)] + "&date=" + found_links[len(found_links)-1][15:23] + "T" + found_time + "59&onedayonly=1&articlemask=lenta_common")
 		if err != nil {
-			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", URL, err)
+			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", ria_url, err)
 		}
 
 		extractLinks(doc)
@@ -226,7 +202,7 @@ func parsing_links() []Data {
 		//	fmt.Printf("%d: %s\n", i+1, link)
 		//}
 	} else {
-		fmt.Printf("\nНе найдено ссылок с классом '%s' на странице %s.\n", "list-item__title color-font-hover-only", URL)
+		fmt.Printf("\nНе найдено ссылок с классом '%s' на странице %s.\n", "list-item__title color-font-hover-only", ria_url)
 		fmt.Println("Возможные причины:")
 		fmt.Println("1. HTML-структура сайта изменилась.")
 		fmt.Println("2. Элементы загружаются динамически с помощью JavaScript.")
@@ -243,7 +219,7 @@ func parsing_page(links []string) []Data {
 
 	if totalLinks == 0 {
 		fmt.Println("Нет ссылок для парсинга.")
-		return products
+		return nil
 	} else {
 		fmt.Println("\nНачало парсинга статей...")
 	}
@@ -419,4 +395,29 @@ func formatDuration(d time.Duration) string {
 
 	// Собираем строку: Xm Y.ZZZs
 	return fmt.Sprintf("%dm %.3fs", minutes, secondsWithMillis)
+}
+
+// get_html загружает HTML-страницу по указанному URL и парсит ее
+func get_html(pageUrl string) (*html.Node, error) {
+	// Выполняет HTTP GET запрос по указанному URL
+	resp, err := http.Get(pageUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	// defer гарантирует, что тело ответа будет закрыто перед выходом из функции
+	defer resp.Body.Close()
+
+	// Проверяет, успешен ли HTTP-статус ответа (код 200 OK)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ошибка при получении страницы %s: %s", pageUrl, resp.Status)
+	}
+
+	// Парсит (разбирает) тело ответа (HTML-документ) в дерево узлов
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
+	}
+
+	return doc, nil
 }
