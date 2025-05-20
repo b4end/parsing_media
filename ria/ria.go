@@ -1,4 +1,4 @@
-package main
+package ria
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ const (
 // timeRegex находит время в формате ЧЧ:ММ (например, 22:58, 09:30)
 var timeRegex = regexp.MustCompile(`(\d{2}:\d{2})`)
 
-func main() {
+func RiaMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", colorYellow, colorReset)

@@ -1,7 +1,9 @@
 package main
 
-import "parsing_media/gazeta"
+import (
+	"parsing_media/ria"
+)
 
 func main() {
-	gazeta.GazetaMain()
+	ria.RiaMain()
 }
