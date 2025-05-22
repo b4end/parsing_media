@@ -1,0 +1,5 @@
+package mk
+
+func MKMain() {
+
+}
