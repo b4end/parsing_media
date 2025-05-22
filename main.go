@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"parsing_media/gazeta"
 	"parsing_media/lenta"
+	"parsing_media/mk"
 	"parsing_media/ria"
 	"parsing_media/vesti"
 )
@@ -11,7 +12,7 @@ import (
 func main() {
 	var num string
 
-	fmt.Print("1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n\n")
+	fmt.Print("1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - MK\n\n")
 	fmt.Scan(&num)
 
 	switch num {
@@ -27,5 +28,9 @@ func main() {
 
 	case "4":
 		vesti.VestiMain()
+
+	case "5":
+		mk.MKMain()
 	}
+
 }
