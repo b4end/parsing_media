@@ -96,7 +96,7 @@ func parsingLinks() []Data {
 	} else {
 		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", colorYellow, colorReset)
 	}
-	return nil //parsingPage(foundLinks)
+	return parsingPage(foundLinks)
 }
 
 func parsingPage(links []string) []Data {
