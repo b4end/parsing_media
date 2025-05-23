@@ -8,13 +8,14 @@ import (
 	"parsing_media/lenta"
 	"parsing_media/mk"
 	"parsing_media/ria"
+	"parsing_media/smotrim"
 	"parsing_media/vesti"
 )
 
 func main() {
 	var num string
 
-	fmt.Print("1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n\n")
+	fmt.Print("1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n8 - Smotrim\n\n")
 	fmt.Scan(&num)
 
 	switch num {
@@ -39,6 +40,9 @@ func main() {
 
 	case "7":
 		fontanka.FontankaMain()
+
+	case "8":
+		smotrim.SmotrimMain()
 	}
 
 }
