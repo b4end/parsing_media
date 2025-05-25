@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"parsing_media/banki"
 	"parsing_media/fontanka"
 	"parsing_media/gazeta"
 	"parsing_media/kommers"
@@ -15,7 +16,7 @@ import (
 func main() {
 	var num string
 
-	fmt.Print("1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n8 - Smotrim\n\n")
+	fmt.Print("1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n8 - Smotrim\n9 - Banki\n\n")
 	fmt.Scan(&num)
 
 	switch num {
@@ -43,6 +44,9 @@ func main() {
 
 	case "8":
 		smotrim.SmotrimMain()
+
+	case "9":
+		banki.BankiMain()
 	}
 
 }

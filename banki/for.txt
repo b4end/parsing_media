@@ -1,0 +1,35 @@
+progressBarLength := 40
+
+	// Сбор ссылок с дополнительных страниц, если нужно
+	for newPage := 2; len(foundLinks) < quantityLinks; newPage++ { // Начинаем с page-2, т.к. page-0 и page-1 часто дублируют основную
+		nowURL := fmt.Sprintf(bankiURLNewPage, newPage)
+		doc, err := getHTML(nowURL)
+		if err != nil {
+			fmt.Printf("\n%s[WARNING] Не удалось получить страницу %s. Ошибка: %s. Пропуск этой страницы.%s\n",
+				colorYellow, nowURL, err, colorReset)
+			// Можно решить, прерывать ли цикл или просто пропустить страницу
+			// break // если хотим прервать при первой ошибке
+			if newPage > 50 { // Ограничение, чтобы не уйти в бесконечный цикл, если что-то не так с сайтом
+				fmt.Printf("\n%s[WARNING] Достигнут лимит страниц для поиска ссылок.%s\n", colorYellow, colorReset)
+				break
+			}
+			continue // если хотим пропустить и попробовать следующую
+		}
+
+		extractLinks(doc)
+
+		percent := int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
+		if completedChars < 0 {
+			completedChars = 0
+		} else if completedChars > progressBarLength {
+			completedChars = progressBarLength
+		}
+		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
+		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, colorGreen, countStr, colorReset)
+		if len(foundLinks) >= quantityLinks {
+			break
+		}
+	}
+	fmt.Println() // Перевод строки после прогресс-бара

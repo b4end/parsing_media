@@ -1,6 +1,7 @@
 package banki
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +14,20 @@ import (
 type Data struct {
 	Title string
 	Body  string
+}
+
+type NewsItemJSON struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+	// Добавьте другие поля, если они нужны
+}
+
+type ListViewItemsJSON map[string][]NewsItemJSON // Ключ - дата (строка), значение - массив новостей
+
+type ModuleOptionsJSON struct {
+	ListViewItems ListViewItemsJSON `json:"listViewItems"`
+	PageRoute     string            `json:"pageRoute"` // Например, "/news/lenta/"
+	// ... другие поля, если нужны
 }
 
 // Константы (Цветовые константы ANSI)
@@ -42,72 +57,97 @@ func parsingLinks() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	var extractLinks func(*html.Node)
-	extractLinks = func(h *html.Node) {
-		if h == nil {
-			return
-		}
-		if h.Type == html.ElementNode { // Класс для ссылок на статьи
-			fmt.Printf("1")
-			if h.Data == "a" {
-				fmt.Printf("2")
-				if hasAllClasses(h, "NewsItemstyled__StyledItemTitle-sc-jjc7yr-7 tykaP") {
-					fmt.Printf("3")
-					if len(foundLinks) < quantityLinks {
-						if href, ok := getAttribute(h, "href"); ok {
-							fmt.Printf("Найдена ссылка: %s\n", href)
-							var fullURL string
-							if strings.HasPrefix(href, bankiURL) {
-								fullURL = href
-							} else if strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//") {
-								fullURL = bankiURL + href
-							}
-
-							if fullURL != "" && !seenLinks[fullURL] {
-								seenLinks[fullURL] = true
-								foundLinks = append(foundLinks, fullURL)
-								fmt.Printf("Найдена ссылка: %s\n", fullURL) // Для отладки
-							}
-						}
-					}
-				}
-			}
-		}
-		if len(foundLinks) < quantityLinks {
-			for c := h.FirstChild; c != nil; c = c.NextSibling {
-				extractLinks(c)
-			}
-		}
-	}
-
-	fmt.Printf("\n%s[INFO] Начало сбора ссылок на статьи...%s\n", colorYellow, colorReset)
-	doc, err := getHTML(bankiURLNews)
-	if err != nil {
-		fmt.Printf("\n%s[CRITICAL] Не удалось загрузить стартовую страницу %s для первоначального сбора ссылок. Ошибка: %s. Завершение работы.%s\n",
-			colorRed, bankiURLNews, err, colorReset)
-		return nil
-	}
-	extractLinks(doc)
+	fmt.Printf("\n%s[INFO] Начало сбора ссылок...%s\n", colorYellow, colorReset)
 
 	progressBarLength := 40
 
-	// Сбор ссылок с дополнительных страниц, если нужно
-	for newPage := 2; len(foundLinks) < quantityLinks; newPage++ { // Начинаем с page-2, т.к. page-0 и page-1 часто дублируют основную
-		nowURL := fmt.Sprintf(bankiURLNewPage, newPage)
-		doc, err := getHTML(nowURL)
-		if err != nil {
-			fmt.Printf("\n%s[WARNING] Не удалось получить страницу %s. Ошибка: %s. Пропуск этой страницы.%s\n",
-				colorYellow, nowURL, err, colorReset)
-			// Можно решить, прерывать ли цикл или просто пропустить страницу
-			// break // если хотим прервать при первой ошибке
-			if newPage > 50 { // Ограничение, чтобы не уйти в бесконечный цикл, если что-то не так с сайтом
-				fmt.Printf("\n%s[WARNING] Достигнут лимит страниц для поиска ссылок.%s\n", colorYellow, colorReset)
-				break
+	for numPage := 1; len(foundLinks) < quantityLinks; numPage++ {
+		nowURL := fmt.Sprintf(bankiURLNewPage, numPage)
+
+		var jsonData string      // Сбрасываем для каждой новой страницы
+		var dataFoundOnPage bool // Флаг, что JSON был найден на текущей странице
+
+		var findJSONData func(*html.Node)
+		findJSONData = func(n *html.Node) {
+			if dataFoundOnPage { // Если уже нашли на этой странице, дальше не идем
+				return
 			}
-			continue // если хотим пропустить и попробовать следующую
+			if n.Type == html.ElementNode && n.Data == "div" {
+				modulePath, modulePathOk := getAttribute(n, "data-module")
+				optionsStr, optionsOk := getAttribute(n, "data-module-options")
+
+				// Ищем div, который содержит данные для NewsBundle/app/desktop/lenta-list
+				if modulePathOk && optionsOk && strings.Contains(modulePath, "NewsBundle/app/desktop/lenta-list") {
+					jsonData = optionsStr
+					dataFoundOnPage = true
+					return // Нашли, выходим
+				}
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if dataFoundOnPage {
+					break
+				}
+				findJSONData(c)
+			}
 		}
 
-		extractLinks(doc)
+		doc, err := getHTML(nowURL)
+		if err != nil {
+			fmt.Printf("\n%s[WARNING] Не удалось загрузить страницу %s. Ошибка: %s. Завершение пагинации.%s\n",
+				colorRed, nowURL, err, colorReset)
+			break // Прерываем цикл пагинации, если страница не загрузилась
+		}
+
+		findJSONData(doc)
+
+		if jsonData == "" {
+			fmt.Printf("\n%s[INFO] Не найден JSON с данными о новостях на странице %s. Вероятно, новости закончились или структура страницы изменилась.%s\n", colorYellow, nowURL, colorReset)
+			break // Если JSON не найден, скорее всего, новостей на этой странице (и далее) нет
+		}
+
+		var moduleOpts ModuleOptionsJSON
+		err = json.Unmarshal([]byte(jsonData), &moduleOpts)
+		if err != nil {
+			fmt.Printf("\n%s[ERROR] Не удалось распарсить JSON со страницы %s: %v%s\n", colorRed, nowURL, err, colorReset)
+			// Можно либо `continue` к следующей странице, либо `break`, если это критично
+			continue // Попробуем следующую страницу
+		}
+
+		if len(moduleOpts.ListViewItems) == 0 {
+			fmt.Printf("%s[INFO] На странице %s в JSON поле listViewItems пусто. Вероятно, новости на этой странице закончились.%s\n", colorYellow, nowURL, colorReset)
+			break // Новости закончились
+		}
+
+		pageRoute := moduleOpts.PageRoute
+		if pageRoute == "" {
+			pageRoute = "/news/lenta/" // Значение по умолчанию, если не найдено в JSON
+		}
+		// Нормализация pageRoute
+		if !strings.HasPrefix(pageRoute, "/") {
+			pageRoute = "/" + pageRoute
+		}
+		pageRoute = strings.TrimSuffix(pageRoute, "/") // Убираем конечный слеш, если он есть
+
+		newsAddedOnThisPage := 0
+		for _, newsItemsOnDate := range moduleOpts.ListViewItems {
+			if len(foundLinks) >= quantityLinks {
+				break
+			}
+			for _, item := range newsItemsOnDate {
+				if len(foundLinks) >= quantityLinks {
+					break
+				}
+				// Формируем URL: bankiURL + pageRoute (без конечного /) + "?id=" + item.ID
+				fullHref := fmt.Sprintf("%s%s?id=%d", bankiURL, pageRoute, item.ID)
+
+				if fullHref != "" && !seenLinks[fullHref] {
+					seenLinks[fullHref] = true
+					foundLinks = append(foundLinks, fullHref)
+					newsAddedOnThisPage++
+					// fmt.Printf("Найдена ссылка: %s (Заголовок: %s)\n", fullHref, item.Title)
+				}
+			}
+		}
 
 		percent := int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
@@ -119,18 +159,15 @@ func parsingLinks() []Data {
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
 		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, colorGreen, countStr, colorReset)
-		if len(foundLinks) >= quantityLinks {
-			break
-		}
 	}
-	fmt.Println() // Перевод строки после прогресс-бара
 
 	if len(foundLinks) > 0 {
-		fmt.Printf("\n%s[INFO] Собрано %d уникальных ссылок на статьи.%s\n", colorGreen, len(foundLinks), colorReset)
+		fmt.Printf("\n%s[INFO] Сбор завершен. Собрано %d уникальных ссылок на статьи из JSON.%s\n", colorGreen, len(foundLinks), colorReset)
 	} else {
-		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", colorYellow, colorReset)
+		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга из JSON после обхода страниц.%s\n", colorRed, colorReset)
 	}
-	return nil //parsingPage(foundLinks)
+
+	return parsingPage(foundLinks)
 }
 
 func parsingPage(links []string) []Data {
@@ -163,13 +200,13 @@ func parsingPage(links []string) []Data {
 				if n.Type == html.ElementNode {
 					// Поиск заголовка
 					if title == "" && n.Data == "h1" {
-						if classVal, ok := getAttribute(n, "class"); ok && strings.Contains(classVal, "title_BgFsr") { // Убрал точное совпадение, сделал contains
+						if classVal, ok := getAttribute(n, "class"); ok && strings.Contains(classVal, "text-header-0") { // Убрал точное совпадение, сделал contains
 							title = strings.TrimSpace(extractText(n))
 						}
 					}
 
 					// Поиск и АГРЕГАЦИЯ контейнеров тела статьи
-					if n.Data == "div" && hasAllClasses(n, "uiArticleBlockText_5xJo1 text-style-body-1 c-text block_0DdLJ") {
+					if n.Data == "div" && hasAllClasses(n, "l6d291019") {
 						var currentBlockContentBuilder strings.Builder // Локальный сборщик для ЭТОГО div-блока
 
 						// Вспомогательная функция для сбора текста ИЗ ДЕТЕЙ текущего div-блока (n)
@@ -178,7 +215,7 @@ func parsingPage(links []string) []Data {
 							if contentNode.Type == html.ElementNode {
 								// Собираем текст из <p> и <a> напрямую
 								// Также можно добавить другие теги, если они содержат текст, например, blockquote, li
-								if contentNode.Data == "p" || contentNode.Data == "a" || contentNode.Data == "li" || contentNode.Data == "blockquote" {
+								if contentNode.Data == "p" || contentNode.Data == "a" || contentNode.Data == "span" || contentNode.Data == "ol" || contentNode.Data == "li" {
 									partText := strings.TrimSpace(extractText(contentNode))
 									if partText != "" {
 										if currentBlockContentBuilder.Len() > 0 {
