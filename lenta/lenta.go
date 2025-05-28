@@ -3,34 +3,25 @@ package lenta
 import (
 	"fmt"      // Текст в консоль;
 	"net/http" // Выполнение HTTP-запросов;
-	"strings"  // Работа со строками;
+	. "parsing_media/utils"
+	"strings" // Работа со строками;
 	"time"
 
 	"golang.org/x/net/html" // Специальная библиотека, для парсинга HTML.
 )
 
 const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorRed    = "\033[31m"
-	colorYellow = "\033[33m"
-
 	baseLinksNumber = 100 // Сколько ссылок нужно получить;
 )
-
-type Data struct { // Определение структуры того, как будут храниться данные:
-	Title string // Сначала заголовок;
-	Body  string // Потом остальной текст.
-}
 
 func LentaMain() {
 	totalStartTime := time.Now()
 
-	fmt.Printf("%s[INFO] Запуск программы...%s\n", colorYellow, colorReset)
+	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
 	_ = getLinks()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", colorYellow, formatDuration(totalElapsedTime), colorReset)
+	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getHTML(pageURL string) (*html.Node, error) { // «получитьHTML»: получает HTML-код указанного сайта.
@@ -139,7 +130,7 @@ func getLinks() []Data { // «получитьСсылки»: получает �
 		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), baseLinksNumber)
 
 		// Выводим прогресс-бар, процент выполнения и статусное сообщение
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, colorGreen, countStr, colorReset)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 	}
 
 	// Выводим количество ссылок
@@ -169,12 +160,12 @@ func getPage(links []string) []Data { // «получитьСтраницу»: �
 	for i, URL := range links {
 		var title, body string
 		var pageStatusMessage string
-		var statusMessageColor = colorReset
+		var statusMessageColor = ColorReset
 
 		doc, err := getHTML(URL)
 		if err != nil {
-			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", limitString(err.Error(), 50))
-			statusMessageColor = colorRed // Ошибка - красный цвет
+			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
+			statusMessageColor = ColorRed // Ошибка - красный цвет
 		} else {
 			var get_data func(*html.Node)
 			get_data = func(h *html.Node) {
@@ -189,10 +180,10 @@ func getPage(links []string) []Data { // «получитьСтраницу»: �
 
 					if classValue == "topic-body__title" {
 						if title == "" {
-							title = strings.TrimSpace(extractText(h))
+							title = strings.TrimSpace(ExtractText(h))
 						}
 					} else if classValue == "topic-body__content-text" {
-						currentTextPart := strings.TrimSpace(extractText(h))
+						currentTextPart := strings.TrimSpace(ExtractText(h))
 						if currentTextPart != "" {
 							if body != "" {
 								body += "\n"
@@ -209,11 +200,11 @@ func getPage(links []string) []Data { // «получитьСтраницу»: �
 
 			if title != "" || body != "" {
 				products = append(products, Data{Title: title, Body: body})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", limitString(title, 50))
-				statusMessageColor = colorGreen // Успех - зеленый
+				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 50))
+				statusMessageColor = ColorGreen // Успех - зеленый
 			} else {
-				pageStatusMessage = fmt.Sprintf("Нет данных: %s", limitString(URL, 50))
-				statusMessageColor = colorRed // Нет данных - красный
+				pageStatusMessage = fmt.Sprintf("Нет данных: %s", LimitString(URL, 50))
+				statusMessageColor = ColorRed // Нет данных - красный
 			}
 		}
 
@@ -244,7 +235,7 @@ func getPage(links []string) []Data { // «получитьСтраницу»: �
 			fullStatusText = fullStatusText[:statusTextWidth]
 		}
 
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, colorReset)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
 	}
 
 	fmt.Println(strings.Repeat(" ", progressBarLength+statusTextWidth+15))
@@ -262,55 +253,4 @@ func getPage(links []string) []Data { // «получитьСтраницу»: �
 	//}
 
 	return products
-}
-
-func limitString(s string, length int) string {
-	if len(s) <= length {
-		return s
-	}
-	if length <= 3 {
-		return s[:length]
-	}
-	return s[:length-3] + "..."
-}
-
-// Вспомогательная функция для извлечения всего текстового содержимого из узла и его потомков
-func extractText(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return n.Data
-	}
-	// Игнорируем содержимое тегов, которые не несут видимого текста
-	if n.Type == html.ElementNode && (n.Data == "script" || n.Data == "style" || n.Data == "noscript" || n.Data == "iframe") {
-		return ""
-	}
-	var sb strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		sb.WriteString(extractText(c))
-	}
-	return sb.String()
-}
-
-// Вспомогательная функция для форматирования time.Duration
-func formatDuration(d time.Duration) string {
-	// Округляем до ближайшей миллисекунды для более чистого вывода
-	d = d.Round(time.Millisecond)
-
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	if d < time.Minute {
-		// Формат: X.YYYs (например, 5.123s)
-		return fmt.Sprintf("%.3fs", d.Seconds())
-	}
-
-	// Извлекаем минуты
-	minutes := int64(d.Minutes())
-	// Оставшаяся часть после вычета целых минут
-	remainingSeconds := d - (time.Duration(minutes) * time.Minute)
-
-	// Форматируем оставшиеся секунды с миллисекундами
-	secondsWithMillis := remainingSeconds.Seconds()
-
-	// Собираем строку: Xm Y.ZZZs
-	return fmt.Sprintf("%dm %.3fs", minutes, secondsWithMillis)
 }

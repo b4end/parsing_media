@@ -2,7 +2,7 @@ package ria
 
 import (
 	"fmt"
-	"net/http"
+	. "parsing_media/utils"
 	"regexp"
 	"strings"
 	"time"
@@ -10,19 +10,8 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Product определяет структуру для хранения данных о продукте
-type Data struct {
-	Title string
-	Body  string
-}
-
 // Константы (Цветовые константы ANSI)
 const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorRed    = "\033[31m"
-	colorYellow = "\033[33m"
-
 	quantityLinks = 100
 )
 
@@ -32,11 +21,11 @@ var timeRegex = regexp.MustCompile(`(\d{2}:\d{2})`)
 func RiaMain() {
 	totalStartTime := time.Now()
 
-	fmt.Printf("%s[INFO] Запуск программы...%s\n", colorYellow, colorReset)
+	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
 	_ = parsing_links()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", colorYellow, formatDuration(totalElapsedTime), colorReset)
+	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func parsing_links() []Data {
@@ -146,7 +135,7 @@ func parsing_links() []Data {
 	fmt.Println("\nНачало парсинга ссылок...")
 
 	// Получаем HTML-документ ленты новостей
-	doc, err := get_html(ria_url)
+	doc, err := GetHTML(ria_url)
 	if err != nil {
 		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", ria_url, err)
 	}
@@ -165,7 +154,7 @@ func parsing_links() []Data {
 		}
 
 		// Парсинг доп ссылки
-		doc, err := get_html("https://ria.ru/services/lenta/more.html?id=" + found_links[len(found_links)-1][(len(found_links[len(found_links)-1])-15):(len(found_links[len(found_links)-1])-5)] + "&date=" + found_links[len(found_links)-1][15:23] + "T" + found_time + "59&onedayonly=1&articlemask=lenta_common")
+		doc, err := GetHTML("https://ria.ru/services/lenta/more.html?id=" + found_links[len(found_links)-1][(len(found_links[len(found_links)-1])-15):(len(found_links[len(found_links)-1])-5)] + "&date=" + found_links[len(found_links)-1][15:23] + "T" + found_time + "59&onedayonly=1&articlemask=lenta_common")
 		if err != nil {
 			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", ria_url, err)
 		}
@@ -191,7 +180,7 @@ func parsing_links() []Data {
 		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), quantityLinks)
 
 		// Выводим прогресс-бар, процент выполнения и статусное сообщение
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, colorGreen, countStr, colorReset)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 
 	}
 
@@ -230,12 +219,12 @@ func parsing_page(links []string) []Data {
 	for i, url := range links {
 		var title, body string
 		var pageStatusMessage string
-		var statusMessageColor = colorReset
+		var statusMessageColor = ColorReset
 
-		doc, err := get_html(url)
+		doc, err := GetHTML(url)
 		if err != nil {
-			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", limitString(err.Error(), 50))
-			statusMessageColor = colorRed // Ошибка - красный цвет
+			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
+			statusMessageColor = ColorRed // Ошибка - красный цвет
 		} else {
 			var get_data func(*html.Node)
 			get_data = func(h *html.Node) {
@@ -250,10 +239,10 @@ func parsing_page(links []string) []Data {
 
 					if classAttrValue == "article__title" {
 						if title == "" {
-							title = strings.TrimSpace(extractText(h))
+							title = strings.TrimSpace(ExtractText(h))
 						}
 					} else if classAttrValue == "article__text" {
-						currentTextPart := strings.TrimSpace(extractText(h))
+						currentTextPart := strings.TrimSpace(ExtractText(h))
 						if currentTextPart != "" {
 							if body != "" {
 								body += "\n"
@@ -261,7 +250,7 @@ func parsing_page(links []string) []Data {
 							body += currentTextPart
 						}
 					} else if strings.Contains(classAttrValue, "article__quote-text") {
-						quoteTextPart := strings.TrimSpace(extractText(h))
+						quoteTextPart := strings.TrimSpace(ExtractText(h))
 						if quoteTextPart != "" {
 							if body != "" {
 								body += "\n"
@@ -278,11 +267,11 @@ func parsing_page(links []string) []Data {
 
 			if title != "" || body != "" {
 				products = append(products, Data{Title: title, Body: body})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", limitString(title, 50))
-				statusMessageColor = colorGreen // Успех - зеленый
+				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 50))
+				statusMessageColor = ColorGreen // Успех - зеленый
 			} else {
-				pageStatusMessage = fmt.Sprintf("Нет данных: %s", limitString(url, 50))
-				statusMessageColor = colorRed // Нет данных - красный
+				pageStatusMessage = fmt.Sprintf("Нет данных: %s", LimitString(url, 50))
+				statusMessageColor = ColorRed // Нет данных - красный
 			}
 		}
 
@@ -313,7 +302,7 @@ func parsing_page(links []string) []Data {
 			fullStatusText = fullStatusText[:statusTextWidth]
 		}
 
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, colorReset)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
 	}
 
 	fmt.Println(strings.Repeat(" ", progressBarLength+statusTextWidth+15))
@@ -333,32 +322,6 @@ func parsing_page(links []string) []Data {
 	return products
 }
 
-func limitString(s string, length int) string {
-	if len(s) <= length {
-		return s
-	}
-	if length <= 3 {
-		return s[:length]
-	}
-	return s[:length-3] + "..."
-}
-
-// Вспомогательная функция для извлечения всего текстового содержимого из узла и его потомков
-func extractText(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return n.Data
-	}
-	// Игнорируем содержимое тегов, которые не несут видимого текста
-	if n.Type == html.ElementNode && (n.Data == "script" || n.Data == "style" || n.Data == "noscript" || n.Data == "iframe") {
-		return ""
-	}
-	var sb strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		sb.WriteString(extractText(c))
-	}
-	return sb.String()
-}
-
 // extractHHMM извлекает "ЧЧ:ММ" и возвращает "ЧЧММ".
 func extractHHMM(input string) (string, error) {
 	matches := timeRegex.FindStringSubmatch(input)
@@ -370,54 +333,4 @@ func extractHHMM(input string) (string, error) {
 	}
 
 	return "", fmt.Errorf("время в формате ЧЧ:ММ не найдено в строке: '%s'", input)
-}
-
-// Вспомогательная функция для форматирования time.Duration
-func formatDuration(d time.Duration) string {
-	// Округляем до ближайшей миллисекунды для более чистого вывода
-	d = d.Round(time.Millisecond)
-
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	if d < time.Minute {
-		// Формат: X.YYYs (например, 5.123s)
-		return fmt.Sprintf("%.3fs", d.Seconds())
-	}
-
-	// Извлекаем минуты
-	minutes := int64(d.Minutes())
-	// Оставшаяся часть после вычета целых минут
-	remainingSeconds := d - (time.Duration(minutes) * time.Minute)
-
-	// Форматируем оставшиеся секунды с миллисекундами
-	secondsWithMillis := remainingSeconds.Seconds()
-
-	// Собираем строку: Xm Y.ZZZs
-	return fmt.Sprintf("%dm %.3fs", minutes, secondsWithMillis)
-}
-
-// get_html загружает HTML-страницу по указанному URL и парсит ее
-func get_html(pageUrl string) (*html.Node, error) {
-	// Выполняет HTTP GET запрос по указанному URL
-	resp, err := http.Get(pageUrl)
-	if err != nil {
-		return nil, err
-	}
-
-	// defer гарантирует, что тело ответа будет закрыто перед выходом из функции
-	defer resp.Body.Close()
-
-	// Проверяет, успешен ли HTTP-статус ответа (код 200 OK)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ошибка при получении страницы %s: %s", pageUrl, resp.Status)
-	}
-
-	// Парсит (разбирает) тело ответа (HTML-документ) в дерево узлов
-	doc, err := html.Parse(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
-	}
-
-	return doc, nil
 }

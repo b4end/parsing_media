@@ -2,26 +2,15 @@ package kommers
 
 import (
 	"fmt"
-	"net/http"
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
 )
 
-// Data определяет структуру для хранения данных о продукте
-type Data struct {
-	Title string
-	Body  string
-}
-
 // Константы (Цветовые константы ANSI)
 const (
-	colorReset  = "\033[0m"
-	colorGreen  = "\033[32m"
-	colorRed    = "\033[31m"
-	colorYellow = "\033[33m"
-
 	quantityLinks     = 100
 	kommersURL        = "https://www.kommersant.ru/"
 	kommersURLNews    = "https://www.kommersant.ru/lenta"
@@ -31,11 +20,11 @@ const (
 func KommersMain() {
 	totalStartTime := time.Now()
 
-	fmt.Printf("%s[INFO] Запуск программы...%s\n", colorYellow, colorReset)
+	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
 	_ = parsingLinks()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", colorYellow, formatDuration(totalElapsedTime), colorReset)
+	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func parsingLinks() []Data {
@@ -86,7 +75,7 @@ func parsingLinks() []Data {
 	fmt.Println("\nНачало парсинга ссылок...")
 
 	// Получаем HTML-документ ленты новостей
-	doc, err := getHTML(kommersURL)
+	doc, err := GetHTML(kommersURL)
 	if err != nil {
 		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", kommersURL, err)
 	}
@@ -98,7 +87,7 @@ func parsingLinks() []Data {
 	for pageNumber := 1; len(found_links) < quantityLinks; pageNumber++ {
 
 		// Парсинг доп ссылки
-		doc, err := getHTML("https://www.kommersant.ru/lenta?page=" + fmt.Sprint(pageNumber))
+		doc, err := GetHTML("https://www.kommersant.ru/lenta?page=" + fmt.Sprint(pageNumber))
 		if err != nil {
 			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", kommersURL, err)
 		}
@@ -123,7 +112,7 @@ func parsingLinks() []Data {
 		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), quantityLinks)
 
 		// Выводим прогресс-бар, процент выполнения и статусное сообщение
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, colorGreen, countStr, colorReset)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 	}
 
 	// Выводим количество ссылок
@@ -153,12 +142,12 @@ func parsingPage(links []string) []Data {
 	for i, URL := range links {
 		var title, body string
 		var pageStatusMessage string
-		var statusMessageColor = colorReset
+		var statusMessageColor = ColorReset
 
-		doc, err := getHTML(URL)
+		doc, err := GetHTML(URL)
 		if err != nil {
-			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", limitString(err.Error(), 50))
-			statusMessageColor = colorRed // Ошибка - красный цвет
+			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
+			statusMessageColor = ColorRed // Ошибка - красный цвет
 		} else {
 			var get_data func(*html.Node)
 			get_data = func(h *html.Node) {
@@ -173,10 +162,10 @@ func parsingPage(links []string) []Data {
 
 					if classValue == "doc_header__name js-search-mark" {
 						if title == "" {
-							title = strings.TrimSpace(extractText(h))
+							title = strings.TrimSpace(ExtractText(h))
 						}
 					} else if classValue == "doc__text" {
-						currentTextPart := strings.TrimSpace(extractText(h))
+						currentTextPart := strings.TrimSpace(ExtractText(h))
 						if currentTextPart != "" {
 							if body != "" {
 								body += "\n"
@@ -193,11 +182,11 @@ func parsingPage(links []string) []Data {
 
 			if title != "" || body != "" {
 				products = append(products, Data{Title: title, Body: body})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", limitString(title, 50))
-				statusMessageColor = colorGreen // Успех - зеленый
+				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 50))
+				statusMessageColor = ColorGreen // Успех - зеленый
 			} else {
-				pageStatusMessage = fmt.Sprintf("Нет данных: %s", limitString(URL, 50))
-				statusMessageColor = colorRed // Нет данных - красный
+				pageStatusMessage = fmt.Sprintf("Нет данных: %s", LimitString(URL, 50))
+				statusMessageColor = ColorRed // Нет данных - красный
 			}
 		}
 
@@ -228,7 +217,7 @@ func parsingPage(links []string) []Data {
 			fullStatusText = fullStatusText[:statusTextWidth]
 		}
 
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, colorReset)
+		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
 	}
 
 	fmt.Println(strings.Repeat(" ", progressBarLength+statusTextWidth+15))
@@ -247,120 +236,4 @@ func parsingPage(links []string) []Data {
 	//}
 
 	return products
-}
-
-func getHTML(pageUrl string) (*html.Node, error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-	req, err := http.NewRequest("GET", pageUrl, nil)
-	if err != nil {
-		return nil, fmt.Errorf("создание HTTP GET-запроса для %s: %w", pageUrl, err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("выполнение HTTP GET-запроса к %s: %w", pageUrl, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
-	}
-
-	doc, err := html.Parse(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("парсинг HTML со страницы %s: %w", pageUrl, err)
-	}
-	return doc, nil
-}
-
-func formatDuration(d time.Duration) string {
-	d = d.Round(time.Millisecond)
-	if d < time.Second {
-		return fmt.Sprintf("%dms", d.Milliseconds())
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%.3fs", d.Seconds())
-	}
-	minutes := int64(d.Minutes())
-	remainingSeconds := d - (time.Duration(minutes) * time.Minute)
-	secondsWithMillis := remainingSeconds.Seconds()
-	return fmt.Sprintf("%dm %.3fs", minutes, secondsWithMillis)
-}
-
-func getAttribute(h *html.Node, key string) (string, bool) {
-	if h == nil {
-		return "", false
-	}
-	for _, attr := range h.Attr {
-		if attr.Key == key {
-			return attr.Val, true
-		}
-	}
-	return "", false
-}
-
-func hasAllClasses(h *html.Node, targetClasses string) bool {
-	if h == nil {
-		return false
-	}
-	classAttr, ok := getAttribute(h, "class")
-	if !ok {
-		return false
-	}
-	actualClasses := strings.Fields(classAttr)
-	expectedClasses := strings.Fields(targetClasses)
-	if len(expectedClasses) == 0 {
-		return true
-	}
-	for _, expected := range expectedClasses {
-		found := false
-		for _, actual := range actualClasses {
-			if actual == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-func limitString(s string, length int) string {
-	if len(s) <= length {
-		return s
-	}
-	if length < 3 { // Если длина слишком мала для "..."
-		if length <= 0 {
-			return ""
-		}
-		return s[:length]
-	}
-	return s[:length-3] + "..."
-}
-
-func extractText(n *html.Node) string {
-	if n.Type == html.TextNode {
-		return strings.Join(strings.Fields(n.Data), " ")
-	}
-	if n.Type == html.ElementNode &&
-		(n.Data == "script" || n.Data == "style" || n.Data == "noscript" || n.Data == "iframe" || n.Data == "svg" || n.Data == "img" || n.Data == "video" || n.Data == "audio" || n.Data == "figure" || n.Data == "picture") {
-		return "" // Игнорируем эти теги и их содержимое
-	}
-
-	var sb strings.Builder
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		extractedChildText := extractText(c)
-		if extractedChildText != "" {
-			if sb.Len() > 0 && !strings.HasSuffix(sb.String(), " ") && !strings.HasPrefix(extractedChildText, " ") {
-				sb.WriteString(" ")
-			}
-			sb.WriteString(extractedChildText)
-		}
-	}
-	return sb.String()
 }
