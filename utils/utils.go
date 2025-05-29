@@ -14,6 +14,9 @@ import (
 type Data struct {
 	Title string
 	Body  string
+	Href  string
+	Date  string
+	Time  string
 }
 
 // Цветовые константы ANSI
