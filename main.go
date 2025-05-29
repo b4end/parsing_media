@@ -2,16 +2,16 @@ package main
 
 import (
 	"fmt"
-	"parsing_media/banki"
-	"parsing_media/dumatv"
-	"parsing_media/fontanka"
-	"parsing_media/gazeta"
-	"parsing_media/kommers"
-	"parsing_media/lenta"
-	"parsing_media/mk"
-	"parsing_media/ria"
-	"parsing_media/smotrim"
-	"parsing_media/vesti"
+	"parsing_media/parsers/banki"
+	"parsing_media/parsers/dumatv"
+	"parsing_media/parsers/fontanka"
+	"parsing_media/parsers/gazeta"
+	"parsing_media/parsers/kommers"
+	"parsing_media/parsers/lenta"
+	"parsing_media/parsers/mk"
+	"parsing_media/parsers/ria"
+	"parsing_media/parsers/smotrim"
+	"parsing_media/parsers/vesti"
 )
 
 func main() {
