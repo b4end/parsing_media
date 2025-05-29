@@ -2,16 +2,7 @@ package main
 
 import (
 	"fmt"
-	"parsing_media/parsers/banki"
-	"parsing_media/parsers/dumatv"
-	"parsing_media/parsers/fontanka"
-	"parsing_media/parsers/gazeta"
-	"parsing_media/parsers/kommers"
-	"parsing_media/parsers/lenta"
-	"parsing_media/parsers/mk"
-	"parsing_media/parsers/ria"
-	"parsing_media/parsers/smotrim"
-	"parsing_media/parsers/vesti"
+	"parsing_media/parsers"
 )
 
 func main() {
@@ -23,34 +14,34 @@ func main() {
 	switch num {
 
 	case "1":
-		ria.RiaMain()
+		parsers.RiaMain()
 
 	case "2":
-		gazeta.GazetaMain()
+		parsers.GazetaMain()
 
 	case "3":
-		lenta.LentaMain()
+		parsers.LentaMain()
 
 	case "4":
-		vesti.VestiMain()
+		parsers.VestiMain()
 
 	case "5":
-		kommers.KommersMain()
+		parsers.KommersMain()
 
 	case "6":
-		mk.MKMain()
+		parsers.MKMain()
 
 	case "7":
-		fontanka.FontankaMain()
+		parsers.FontankaMain()
 
 	case "8":
-		smotrim.SmotrimMain()
+		parsers.SmotrimMain()
 
 	case "9":
-		banki.BankiMain()
+		parsers.BankiMain()
 
 	case "10":
-		dumatv.DumaTVMain()
+		parsers.DumaTVMain()
 	}
 
 }

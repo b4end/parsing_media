@@ -1,34 +1,52 @@
-package kommers
+package parsers
 
 import (
-	"fmt"
+	"fmt"      // Текст в консоль;
+	"net/http" // Выполнение HTTP-запросов;
 	. "parsing_media/utils"
-	"strings"
+	"strings" // Работа со строками;
 	"time"
 
-	"golang.org/x/net/html"
+	"golang.org/x/net/html" // Специальная библиотека, для парсинга HTML.
 )
 
-// Константы (Цветовые константы ANSI)
 const (
-	quantityLinks     = 100
-	kommersURL        = "https://www.kommersant.ru/"
-	kommersURLNews    = "https://www.kommersant.ru/lenta"
-	kommersURLNewPage = "https://www.kommersant.ru/lenta?page=%d"
+	baseLinksNumber = 100 // Сколько ссылок нужно получить;
 )
 
-func KommersMain() {
+func LentaMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks()
+	_ = getLinks()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
-	var found_links []string // Срез (массив) для хранения найденных ссылок.
+func getHTML(pageURL string) (*html.Node, error) { // «получитьHTML»: получает HTML-код указанного сайта.
+	resp, err := http.Get(pageURL)
+
+	if err != nil { // Если есть какая-либо ошибка, то ...
+		return nil, err // ... вывести её.
+	}
+
+	if resp.StatusCode != http.StatusOK { // Проверяет, равен ли HTTP-статус ответа коду 200 OK: успешный запрос.
+		return nil, fmt.Errorf("ошибка %s при получении страницы %s", resp.Status, pageURL) // Если не успешно, то выдаёт ошибку.
+	}
+
+	doc, err := html.Parse(resp.Body) // «Расчленяет» <body>.
+	if err != nil {                   // Ошибка, если <body> по какой-то причине не получилось «расчленить».
+		return nil, fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageURL, err)
+	}
+
+	defer resp.Body.Close() // Закрыть <body> после того, как будет получено всё что нужно. Нужно что бы не нагружать ОЗУ.
+	return doc, nil
+}
+
+func getLinks() []Data { // «получитьСсылки»: получает ссылки с веб-страницы.
+	URL := "https://lenta.ru/parts/news/" // Веб-страница, с которой нужно получать ссылки.
+	var found_links []string              // Срез (массив) для хранения найденных ссылок.
 
 	var extractLinks func(*html.Node) // Рекурсивная функция обхода HTML для получения ссылок.
 	extractLinks = func(h *html.Node) {
@@ -46,7 +64,7 @@ func parsingLinks() []Data {
 				}
 			}
 
-			if classValue == "uho__link uho__link--overlay" { // Проверяем, соответствует ли класс искомому.
+			if classValue == "card-full-news _parts-news" { // Проверяем, соответствует ли класс искомому.
 				isClassCorrect = true
 			}
 
@@ -60,12 +78,12 @@ func parsingLinks() []Data {
 				//}
 
 				if !strings.HasPrefix(hrefValue, "https://") { // Проверка того, что это ссылка на «Lenta.ru».
-					found_links = append(found_links, fmt.Sprint("https://www.kommersant.ru"+hrefValue))
+					found_links = append(found_links, fmt.Sprint("https://lenta.ru"+hrefValue))
 				}
 			}
 		}
 
-		if len(found_links) < quantityLinks {
+		if len(found_links) < baseLinksNumber {
 			for c := h.FirstChild; c != nil; c = c.NextSibling { // Рекурсивно обходим всех потомков текущего узла.
 				extractLinks(c)
 			}
@@ -75,27 +93,27 @@ func parsingLinks() []Data {
 	fmt.Println("\nНачало парсинга ссылок...")
 
 	// Получаем HTML-документ ленты новостей
-	doc, err := GetHTML(kommersURL)
+	doc, err := getHTML(URL)
 	if err != nil {
-		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", kommersURL, err)
+		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", URL, err)
 	}
 
 	extractLinks(doc)
 	progressBarLength := 40
 
 	// Цикл для загрузки ссылок из дополнительных страниц
-	for pageNumber := 1; len(found_links) < quantityLinks; pageNumber++ {
+	for pageNumber := 1; len(found_links) < baseLinksNumber; pageNumber++ {
 
 		// Парсинг доп ссылки
-		doc, err := GetHTML("https://www.kommersant.ru/lenta?page=" + fmt.Sprint(pageNumber))
+		doc, err := getHTML("https://lenta.ru/parts/news/" + fmt.Sprint(pageNumber))
 		if err != nil {
-			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", kommersURL, err)
+			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", URL, err)
 		}
 
 		extractLinks(doc)
 
 		// Расчет процента выполнения для прогресс-бара
-		percent := int((float64(len(found_links)) / float64(quantityLinks)) * 100)
+		percent := int((float64(len(found_links)) / float64(baseLinksNumber)) * 100)
 		// Расчет количества символов '█' для заполненной части прогресс-бара
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
 		// Коррекция, чтобы completedChars не выходил за пределы длины прогресс-бара
@@ -109,7 +127,7 @@ func parsingLinks() []Data {
 		// Формирование строки прогресс-бара: '█' для выполненной части, '-' для оставшейся
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
 		// Формирование строки счетчика обработанных ссылок (например, "(10/100) ")
-		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), quantityLinks)
+		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), baseLinksNumber)
 
 		// Выводим прогресс-бар, процент выполнения и статусное сообщение
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
@@ -119,13 +137,13 @@ func parsingLinks() []Data {
 	if len(found_links) > 0 {
 		fmt.Printf("\n\nНайдено %d уникальных ссылок на статьи\n", len(found_links))
 	} else {
-		fmt.Printf("\nНе найдено ссылок с классом '%s' на странице %s.\n", "uho__link uho__link--overlay", kommersURL)
+		fmt.Printf("\nНе найдено ссылок с классом '%s' на странице %s.\n", "card-full-news _parts-news", URL)
 	}
 
-	return parsingPage(found_links)
+	return getPage(found_links)
 }
 
-func parsingPage(links []string) []Data {
+func getPage(links []string) []Data { // «получитьСтраницу»: получает заголовок и текст.
 	var products []Data
 	totalLinks := len(links)
 
@@ -144,7 +162,7 @@ func parsingPage(links []string) []Data {
 		var pageStatusMessage string
 		var statusMessageColor = ColorReset
 
-		doc, err := GetHTML(URL)
+		doc, err := getHTML(URL)
 		if err != nil {
 			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
 			statusMessageColor = ColorRed // Ошибка - красный цвет
@@ -160,11 +178,11 @@ func parsingPage(links []string) []Data {
 						}
 					}
 
-					if classValue == "doc_header__name js-search-mark" {
+					if classValue == "topic-body__title" {
 						if title == "" {
 							title = strings.TrimSpace(ExtractText(h))
 						}
-					} else if classValue == "doc__text" {
+					} else if classValue == "topic-body__content-text" {
 						currentTextPart := strings.TrimSpace(ExtractText(h))
 						if currentTextPart != "" {
 							if body != "" {
@@ -227,7 +245,6 @@ func parsingPage(links []string) []Data {
 	if len(products) == 0 {
 		fmt.Println("\nНе удалось собрать данные ни с одной страницы.")
 	}
-
 	//for idx, product := range products {
 	//	fmt.Printf("\nСтатья #%d\n", idx+1)
 	//	fmt.Printf("Заголовок: %s\n", product.Title)

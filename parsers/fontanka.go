@@ -1,7 +1,6 @@
-package banki
+package parsers
 
 import (
-	"encoding/json"
 	"fmt"
 	. "parsing_media/utils"
 	"strings"
@@ -10,135 +9,88 @@ import (
 	"golang.org/x/net/html"
 )
 
-type NewsItemJSON struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-	// Добавьте другие поля, если они нужны
-}
-
-type ListViewItemsJSON map[string][]NewsItemJSON // Ключ - дата (строка), значение - массив новостей
-
-type ModuleOptionsJSON struct {
-	ListViewItems ListViewItemsJSON `json:"listViewItems"`
-	PageRoute     string            `json:"pageRoute"` // Например, "/news/lenta/"
-	// ... другие поля, если нужны
-}
-
 // Константы (Цветовые константы ANSI)
 const (
-	quantityLinks   = 100
-	bankiURL        = "https://www.banki.ru"
-	bankiURLNews    = "https://www.banki.ru/news/lenta/"
-	bankiURLNewPage = "https://www.banki.ru/news/lenta/?page=%d/"
+	quantityLinksFontanka = 100
+	fontankaURL           = "https://www.fontanka.ru"
+	fontankaURLNews       = "https://www.fontanka.ru/politic/"
+	fontankaURLNewPage    = "https://www.fontanka.ru/politic/page-%d/"
 )
 
-func BankiMain() {
+func FontankaMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks()
+	_ = parsingLinksFontanka()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
+func parsingLinksFontanka() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	fmt.Printf("\n%s[INFO] Начало сбора ссылок...%s\n", ColorYellow, ColorReset)
+	var extractLinks func(*html.Node)
+	extractLinks = func(h *html.Node) {
+		if h == nil {
+			return
+		}
+		if h.Type == html.ElementNode && h.Data == "a" && HasAllClasses(h, "header_RL97A") { // Класс для ссылок на статьи
+			if len(foundLinks) < quantityLinksFontanka {
+				if href, ok := GetAttribute(h, "href"); ok {
+					var fullURL string
+					if strings.HasPrefix(href, fontankaURL) {
+						fullURL = href
+					} else if strings.HasPrefix(href, "/") && !strings.HasPrefix(href, "//") {
+						fullURL = fontankaURL + href
+					}
+
+					if fullURL != "" && !seenLinks[fullURL] {
+						seenLinks[fullURL] = true
+						foundLinks = append(foundLinks, fullURL)
+						// fmt.Printf("Найдена ссылка: %s\n", fullURL) // Для отладки
+					}
+				}
+			}
+		}
+		if len(foundLinks) < quantityLinksFontanka {
+			for c := h.FirstChild; c != nil; c = c.NextSibling {
+				extractLinks(c)
+			}
+		}
+	}
+
+	fmt.Printf("\n%s[INFO] Начало сбора ссылок на статьи...%s\n", ColorYellow, ColorReset)
+	doc, err := GetHTML(fontankaURLNews)
+	if err != nil {
+		fmt.Printf("\n%s[CRITICAL] Не удалось загрузить стартовую страницу %s для первоначального сбора ссылок. Ошибка: %s. Завершение работы.%s\n",
+			ColorRed, fontankaURLNews, err, ColorReset)
+		return nil
+	}
+	extractLinks(doc)
 
 	progressBarLength := 40
 
-	for numPage := 1; len(foundLinks) < quantityLinks; numPage++ {
-		nowURL := fmt.Sprintf(bankiURLNewPage, numPage)
-
-		var jsonData string      // Сбрасываем для каждой новой страницы
-		var dataFoundOnPage bool // Флаг, что JSON был найден на текущей странице
-
-		var findJSONData func(*html.Node)
-		findJSONData = func(n *html.Node) {
-			if dataFoundOnPage { // Если уже нашли на этой странице, дальше не идем
-				return
-			}
-			if n.Type == html.ElementNode && n.Data == "div" {
-				modulePath, modulePathOk := GetAttribute(n, "data-module")
-				optionsStr, optionsOk := GetAttribute(n, "data-module-options")
-
-				// Ищем div, который содержит данные для NewsBundle/app/desktop/lenta-list
-				if modulePathOk && optionsOk && strings.Contains(modulePath, "NewsBundle/app/desktop/lenta-list") {
-					jsonData = optionsStr
-					dataFoundOnPage = true
-					return // Нашли, выходим
-				}
-			}
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				if dataFoundOnPage {
-					break
-				}
-				findJSONData(c)
-			}
-		}
-
+	// Сбор ссылок с дополнительных страниц, если нужно
+	for newPage := 2; len(foundLinks) < quantityLinksFontanka; newPage++ { // Начинаем с page-2, т.к. page-0 и page-1 часто дублируют основную
+		nowURL := fmt.Sprintf(fontankaURLNewPage, newPage)
 		doc, err := GetHTML(nowURL)
 		if err != nil {
-			fmt.Printf("\n%s[WARNING] Не удалось загрузить страницу %s. Ошибка: %s. Завершение пагинации.%s\n",
-				ColorRed, nowURL, err, ColorReset)
-			break // Прерываем цикл пагинации, если страница не загрузилась
-		}
-
-		findJSONData(doc)
-
-		if jsonData == "" {
-			fmt.Printf("\n%s[INFO] Не найден JSON с данными о новостях на странице %s. Вероятно, новости закончились или структура страницы изменилась.%s\n", ColorYellow, nowURL, ColorReset)
-			break // Если JSON не найден, скорее всего, новостей на этой странице (и далее) нет
-		}
-
-		var moduleOpts ModuleOptionsJSON
-		err = json.Unmarshal([]byte(jsonData), &moduleOpts)
-		if err != nil {
-			fmt.Printf("\n%s[ERROR] Не удалось распарсить JSON со страницы %s: %v%s\n", ColorRed, nowURL, err, ColorReset)
-			// Можно либо `continue` к следующей странице, либо `break`, если это критично
-			continue // Попробуем следующую страницу
-		}
-
-		if len(moduleOpts.ListViewItems) == 0 {
-			fmt.Printf("%s[INFO] На странице %s в JSON поле listViewItems пусто. Вероятно, новости на этой странице закончились.%s\n", ColorYellow, nowURL, ColorReset)
-			break // Новости закончились
-		}
-
-		pageRoute := moduleOpts.PageRoute
-		if pageRoute == "" {
-			pageRoute = "/news/lenta/" // Значение по умолчанию, если не найдено в JSON
-		}
-		// Нормализация pageRoute
-		if !strings.HasPrefix(pageRoute, "/") {
-			pageRoute = "/" + pageRoute
-		}
-		pageRoute = strings.TrimSuffix(pageRoute, "/") // Убираем конечный слеш, если он есть
-
-		newsAddedOnThisPage := 0
-		for _, newsItemsOnDate := range moduleOpts.ListViewItems {
-			if len(foundLinks) >= quantityLinks {
+			fmt.Printf("\n%s[WARNING] Не удалось получить страницу %s. Ошибка: %s. Пропуск этой страницы.%s\n",
+				ColorYellow, nowURL, err, ColorReset)
+			// Можно решить, прерывать ли цикл или просто пропустить страницу
+			// break // если хотим прервать при первой ошибке
+			if newPage > 50 { // Ограничение, чтобы не уйти в бесконечный цикл, если что-то не так с сайтом
+				fmt.Printf("\n%s[WARNING] Достигнут лимит страниц для поиска ссылок.%s\n", ColorYellow, ColorReset)
 				break
 			}
-			for _, item := range newsItemsOnDate {
-				if len(foundLinks) >= quantityLinks {
-					break
-				}
-				// Формируем URL: bankiURL + pageRoute (без конечного /) + "?id=" + item.ID
-				fullHref := fmt.Sprintf("%s%s?id=%d", bankiURL, pageRoute, item.ID)
-
-				if fullHref != "" && !seenLinks[fullHref] {
-					seenLinks[fullHref] = true
-					foundLinks = append(foundLinks, fullHref)
-					newsAddedOnThisPage++
-					// fmt.Printf("Найдена ссылка: %s (Заголовок: %s)\n", fullHref, item.Title)
-				}
-			}
+			continue // если хотим пропустить и попробовать следующую
 		}
 
-		percent := int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+		extractLinks(doc)
+
+		percent := int((float64(len(foundLinks)) / float64(quantityLinksFontanka)) * 100)
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
 		if completedChars < 0 {
 			completedChars = 0
@@ -146,20 +98,23 @@ func parsingLinks() []Data {
 			completedChars = progressBarLength
 		}
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksFontanka)
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
+		if len(foundLinks) >= quantityLinksFontanka {
+			break
+		}
 	}
+	fmt.Println() // Перевод строки после прогресс-бара
 
 	if len(foundLinks) > 0 {
-		fmt.Printf("\n%s[INFO] Сбор завершен. Собрано %d уникальных ссылок на статьи из JSON.%s\n", ColorGreen, len(foundLinks), ColorReset)
+		fmt.Printf("\n%s[INFO] Собрано %d уникальных ссылок на статьи.%s\n", ColorGreen, len(foundLinks), ColorReset)
 	} else {
-		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга из JSON после обхода страниц.%s\n", ColorRed, ColorReset)
+		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", ColorYellow, ColorReset)
 	}
-
-	return parsingPage(foundLinks)
+	return parsingPageFontanka(foundLinks)
 }
 
-func parsingPage(links []string) []Data {
+func parsingPageFontanka(links []string) []Data {
 	var articlesData []Data
 	totalLinks := len(links)
 
@@ -189,13 +144,13 @@ func parsingPage(links []string) []Data {
 				if n.Type == html.ElementNode {
 					// Поиск заголовка
 					if title == "" && n.Data == "h1" {
-						if classVal, ok := GetAttribute(n, "class"); ok && strings.Contains(classVal, "text-header-0") { // Убрал точное совпадение, сделал contains
+						if classVal, ok := GetAttribute(n, "class"); ok && strings.Contains(classVal, "title_BgFsr") { // Убрал точное совпадение, сделал contains
 							title = strings.TrimSpace(ExtractText(n))
 						}
 					}
 
 					// Поиск и АГРЕГАЦИЯ контейнеров тела статьи
-					if n.Data == "div" && HasAllClasses(n, "l6d291019") {
+					if n.Data == "div" && HasAllClasses(n, "uiArticleBlockText_5xJo1 text-style-body-1 c-text block_0DdLJ") {
 						var currentBlockContentBuilder strings.Builder // Локальный сборщик для ЭТОГО div-блока
 
 						// Вспомогательная функция для сбора текста ИЗ ДЕТЕЙ текущего div-блока (n)
@@ -204,7 +159,7 @@ func parsingPage(links []string) []Data {
 							if contentNode.Type == html.ElementNode {
 								// Собираем текст из <p> и <a> напрямую
 								// Также можно добавить другие теги, если они содержат текст, например, blockquote, li
-								if contentNode.Data == "p" || contentNode.Data == "a" || contentNode.Data == "span" || contentNode.Data == "ol" || contentNode.Data == "li" {
+								if contentNode.Data == "p" || contentNode.Data == "a" || contentNode.Data == "li" || contentNode.Data == "blockquote" {
 									partText := strings.TrimSpace(ExtractText(contentNode))
 									if partText != "" {
 										if currentBlockContentBuilder.Len() > 0 {

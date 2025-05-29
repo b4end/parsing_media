@@ -1,4 +1,4 @@
-package gazeta
+package parsers
 
 import (
 	"fmt"
@@ -18,23 +18,23 @@ const (
 	secondaryRetryDelay = 5 * time.Second
 	finalBigDelay       = 1 * time.Minute
 
-	quantityLinks    = 100
-	gazetaURL        = "https://www.gazeta.ru"
-	gazetaURLNews    = "https://www.gazeta.ru/news/"
-	gazetaURLNewPage = "https://www.gazeta.ru/news/?p=main&d=%d&page=%d"
+	quantityLinksGazeta = 100
+	gazetaURL           = "https://www.gazeta.ru"
+	gazetaURLNews       = "https://www.gazeta.ru/news/"
+	gazetaURLNewPage    = "https://www.gazeta.ru/news/?p=main&d=%d&page=%d"
 )
 
 func GazetaMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks()
+	_ = parsingLinksGazeta()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
+func parsingLinksGazeta() []Data {
 	// Срез для хранения ссылок (если порядок важен для последующего использования)
 	var foundLinks []string
 	// Карта для быстрой проверки уникальности. Ключ - ссылка, значение - bool (true, если ссылка уже есть)
@@ -50,7 +50,7 @@ func parsingLinks() []Data {
 		}
 
 		if h.Type == html.ElementNode && h.Data == "a" && HasAllClasses(h, "b_ear m_techlisting") {
-			if len(foundLinks) < quantityLinks {
+			if len(foundLinks) < quantityLinksGazeta {
 				if href, ok := GetAttribute(h, "href"); ok {
 					fullHref := ""
 					if strings.HasPrefix(href, "/") {
@@ -98,7 +98,7 @@ func parsingLinks() []Data {
 
 	progressBarLength := 40
 
-	for numPage := 2; len(foundLinks) < quantityLinks; numPage++ {
+	for numPage := 2; len(foundLinks) < quantityLinksGazeta; numPage++ {
 		// Создание ссылки на новую станицу
 		newURL := fmt.Sprintf(gazetaURLNewPage, lastDate, numPage) // Используем исправленную константу и %d
 
@@ -114,7 +114,7 @@ func parsingLinks() []Data {
 		extractLinks(pageDoc)
 
 		// Расчет процента выполнения для прогресс-бара
-		percent := int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+		percent := int((float64(len(foundLinks)) / float64(quantityLinksGazeta)) * 100)
 		// Расчет количества символов '█' для заполненной части прогресс-бара
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
 		// Коррекция, чтобы completedChars не выходил за пределы длины прогресс-бара
@@ -128,7 +128,7 @@ func parsingLinks() []Data {
 		// Формирование строки прогресс-бара: '█' для выполненной части, '-' для оставшейся
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
 		// Формирование строки счетчика обработанных ссылок (например, "(10/100) ")
-		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksGazeta)
 
 		// Выводим прогресс-бар, процент выполнения и статусное сообщение
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
@@ -145,10 +145,10 @@ func parsingLinks() []Data {
 		fmt.Printf("\nНе найдено ссылок с классом '%s' на странице %s.\n", "b_ear m_techlisting", gazetaURLNews)
 	}
 
-	return parsingPage(foundLinks)
+	return parsingPageGazeta(foundLinks)
 }
 
-func parsingPage(links []string) []Data {
+func parsingPageGazeta(links []string) []Data {
 	// Массив для хранения данных новостей
 	var products []Data
 	// Переменная хронящая длинну среза ссылок

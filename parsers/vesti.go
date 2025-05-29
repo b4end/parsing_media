@@ -1,4 +1,4 @@
-package vesti
+package parsers
 
 import (
 	"encoding/json"
@@ -26,23 +26,23 @@ type VestiAPIResponse struct {
 
 // Константы (Цветовые константы ANSI)
 const (
-	quantityLinks   = 100
-	vestiURL        = "https://www.vesti.ru"
-	vestiURLNews    = "https://www.vesti.ru/news"
-	vestiURLNewPage = "https://www.vesti.ru/api/news?page=%d"
+	quantityLinksVesti = 100
+	vestiURL           = "https://www.vesti.ru"
+	vestiURLNews       = "https://www.vesti.ru/news"
+	vestiURLNewPage    = "https://www.vesti.ru/api/news?page=%d"
 )
 
 func VestiMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks()
+	_ = parsingLinksVesti()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
+func parsingLinksVesti() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -52,7 +52,7 @@ func parsingLinks() []Data {
 			return
 		}
 		if h.Type == html.ElementNode && h.Data == "a" && HasAllClasses(h, "list__pic-wrapper") {
-			if len(foundLinks) < quantityLinks {
+			if len(foundLinks) < quantityLinksVesti {
 				if href, ok := GetAttribute(h, "href"); ok {
 					fullHref := ""
 					if strings.HasPrefix(href, "/") {
@@ -67,7 +67,7 @@ func parsingLinks() []Data {
 				}
 			}
 		}
-		if len(foundLinks) < quantityLinks {
+		if len(foundLinks) < quantityLinksVesti {
 			for c := h.FirstChild; c != nil; c = c.NextSibling {
 				extractLinks(c)
 			}
@@ -83,7 +83,7 @@ func parsingLinks() []Data {
 	extractLinks(doc)
 
 	progressBarLength := 40
-	for numPage := 2; len(foundLinks) < quantityLinks; numPage++ {
+	for numPage := 2; len(foundLinks) < quantityLinksVesti; numPage++ {
 		newURL := fmt.Sprintf(vestiURLNewPage, numPage)
 		jsonData, err := GetJSON(newURL)
 		if err != nil {
@@ -113,7 +113,7 @@ func parsingLinks() []Data {
 		}
 
 		for _, item := range apiResponse.Data {
-			if len(foundLinks) >= quantityLinks {
+			if len(foundLinks) >= quantityLinksVesti {
 				break
 			}
 			if item.URL == "" {
@@ -132,7 +132,7 @@ func parsingLinks() []Data {
 				foundLinks = append(foundLinks, fullHref)
 			}
 		}
-		percent := int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+		percent := int((float64(len(foundLinks)) / float64(quantityLinksVesti)) * 100)
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
 		if completedChars < 0 {
 			completedChars = 0
@@ -140,7 +140,7 @@ func parsingLinks() []Data {
 			completedChars = progressBarLength
 		}
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksVesti)
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 	}
 
@@ -149,10 +149,10 @@ func parsingLinks() []Data {
 	} else {
 		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", ColorYellow, ColorReset)
 	}
-	return parsingPage(foundLinks)
+	return parsingPageVesti(foundLinks)
 }
 
-func parsingPage(links []string) []Data {
+func parsingPageVesti(links []string) []Data {
 	var articlesData []Data
 	totalLinks := len(links)
 

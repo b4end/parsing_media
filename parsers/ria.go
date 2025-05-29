@@ -1,4 +1,4 @@
-package ria
+package parsers
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 
 // Константы (Цветовые константы ANSI)
 const (
-	quantityLinks = 100
+	quantityLinksRia = 100
 )
 
 // timeRegex находит время в формате ЧЧ:ММ (например, 22:58, 09:30)
@@ -22,13 +22,13 @@ func RiaMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsing_links()
+	_ = parsingLinksRia()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsing_links() []Data {
+func parsingLinksRia() []Data {
 	// URL ленты новостей
 	ria_url := "https://ria.ru/lenta/"
 
@@ -77,7 +77,7 @@ func parsing_links() []Data {
 				}
 			}
 		}
-		if len(found_links) < quantityLinks {
+		if len(found_links) < quantityLinksRia {
 			// Рекурсивно обходим всех потомков текущего узла
 			for c := h.FirstChild; c != nil; c = c.NextSibling {
 				extractLinks(c)
@@ -149,7 +149,7 @@ func parsing_links() []Data {
 	// Цикл для загрузки ссылок из дополнительных страниц
 	for true {
 		// Проверка на количество ссылок
-		if len(found_links) >= quantityLinks {
+		if len(found_links) >= quantityLinksRia {
 			break
 		}
 
@@ -163,7 +163,7 @@ func parsing_links() []Data {
 		extractTime(doc)
 
 		// Расчет процента выполнения для прогресс-бара
-		percent := int((float64(len(found_links)) / float64(quantityLinks)) * 100)
+		percent := int((float64(len(found_links)) / float64(quantityLinksRia)) * 100)
 		// Расчет количества символов '█' для заполненной части прогресс-бара
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
 		// Коррекция, чтобы completedChars не выходил за пределы длины прогресс-бара
@@ -177,7 +177,7 @@ func parsing_links() []Data {
 		// Формирование строки прогресс-бара: '█' для выполненной части, '-' для оставшейся
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
 		// Формирование строки счетчика обработанных ссылок (например, "(10/100) ")
-		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), quantityLinks)
+		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), quantityLinksRia)
 
 		// Выводим прогресс-бар, процент выполнения и статусное сообщение
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
@@ -198,11 +198,11 @@ func parsing_links() []Data {
 		fmt.Println("Рекомендуется проверить актуальную HTML-структуру страницы в браузере.")
 	}
 
-	return parsing_page(found_links)
+	return parsingPageRia(found_links)
 }
 
 // parsing_page получает заголовок и текст статьи
-func parsing_page(links []string) []Data {
+func parsingPageRia(links []string) []Data {
 	var products []Data
 	totalLinks := len(links)
 

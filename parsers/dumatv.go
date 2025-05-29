@@ -1,4 +1,4 @@
-package dumatv
+package parsers
 
 import (
 	"encoding/json"
@@ -30,22 +30,22 @@ type DumaTVAPIResponse struct {
 }
 
 const (
-	quantityLinks    = 100
-	dumatvAPIBaseURL = "https://dumatv.ru/api/news-home?date=%s"
-	initialDaysAgo   = 0
+	quantityLinksDumaTV = 100
+	dumatvAPIBaseURL    = "https://dumatv.ru/api/news-home?date=%s"
+	initialDaysAgo      = 0
 )
 
 func DumaTVMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks() // Сохраняем результат для возможного использования
+	_ = parsingLinksDumaTV() // Сохраняем результат для возможного использования
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
+func parsingLinksDumaTV() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -72,16 +72,16 @@ func parsingLinks() []Data {
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 	}
 
-	updateProgressBar(len(foundLinks), quantityLinks)
-	initialDateStr := generateURLForDateFormatted(generateURLForPastDate(initialDaysAgo))
+	updateProgressBar(len(foundLinks), quantityLinksDumaTV)
+	initialDateStr := GenerateURLForDateFormatted(GenerateURLForPastDate(initialDaysAgo))
 	paginatingURL := fmt.Sprintf(dumatvAPIBaseURL, initialDateStr)
 
-	for paginatingURL != "" && len(foundLinks) < quantityLinks {
+	for paginatingURL != "" && len(foundLinks) < quantityLinksDumaTV {
 		rawJSONData, err := GetJSON(paginatingURL)
 		if err != nil {
 			fmt.Printf("\n%s[CRITICAL] Не удалось получить JSON с %s. Ошибка: %s. Остановка сбора ссылок.%s\n", ColorRed, paginatingURL, err, ColorReset)
 			paginatingURL = ""
-			updateProgressBar(len(foundLinks), quantityLinks)
+			updateProgressBar(len(foundLinks), quantityLinksDumaTV)
 			continue
 		}
 		var apiResponse DumaTVAPIResponse
@@ -89,19 +89,19 @@ func parsingLinks() []Data {
 		if err != nil {
 			fmt.Printf("\n%s[ERROR] Не удалось пере-маршализовать JSON для URL %s. Ошибка: %s. Остановка сбора ссылок.%s\n", ColorRed, paginatingURL, err, ColorReset)
 			paginatingURL = ""
-			updateProgressBar(len(foundLinks), quantityLinks)
+			updateProgressBar(len(foundLinks), quantityLinksDumaTV)
 			break
 		}
 		err = json.Unmarshal(jsonBytes, &apiResponse)
 		if err != nil {
 			fmt.Printf("\n%s[CRITICAL] Не удалось преобразовать JSON в структуру DumaTVAPIResponse для URL %s. Ошибка: %s. Остановка сбора ссылок.%s\n", ColorRed, paginatingURL, err, ColorReset)
 			paginatingURL = ""
-			updateProgressBar(len(foundLinks), quantityLinks)
+			updateProgressBar(len(foundLinks), quantityLinksDumaTV)
 			break
 		}
 
 		for _, item := range apiResponse.List {
-			if len(foundLinks) >= quantityLinks {
+			if len(foundLinks) >= quantityLinksDumaTV {
 				break
 			}
 			if item.Link == "" {
@@ -114,13 +114,13 @@ func parsingLinks() []Data {
 			}
 		}
 
-		if apiResponse.NextDate != "" && len(foundLinks) < quantityLinks {
+		if apiResponse.NextDate != "" && len(foundLinks) < quantityLinksDumaTV {
 			paginatingURL = fmt.Sprintf(dumatvAPIBaseURL, apiResponse.NextDate)
 		} else {
 			paginatingURL = ""
 		}
-		updateProgressBar(len(foundLinks), quantityLinks)
-		if len(foundLinks) >= quantityLinks {
+		updateProgressBar(len(foundLinks), quantityLinksDumaTV)
+		if len(foundLinks) >= quantityLinksDumaTV {
 			paginatingURL = ""
 		}
 	}
@@ -130,10 +130,10 @@ func parsingLinks() []Data {
 	} else {
 		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", ColorYellow, ColorReset)
 	}
-	return parsingPage(foundLinks)
+	return parsingPageDumaTV(foundLinks)
 }
 
-func parsingPage(links []string) []Data {
+func parsingPageDumaTV(links []string) []Data {
 	var articlesData []Data
 	var errLinks []string
 	totalLinks := len(links)
@@ -303,19 +303,4 @@ func parsingPage(links []string) []Data {
 		fmt.Printf("\n%s[WARNING] Парсинг статей завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorYellow, totalLinks, ColorReset)
 	}
 	return articlesData
-}
-
-// generateURLForDateFormatted (без изменений)
-func generateURLForDateFormatted(date time.Time) string {
-	year := fmt.Sprintf("%d", date.Year())
-	month := fmt.Sprintf("%02d", date.Month())
-	day := fmt.Sprintf("%02d", date.Day())
-	return fmt.Sprintf("%s.%s.%s", day, month, year)
-}
-
-// generateURLForPastDate (без изменений)
-func generateURLForPastDate(daysAgo int) time.Time {
-	today := time.Now()
-	pastDate := today.AddDate(0, 0, -daysAgo)
-	return pastDate
 }

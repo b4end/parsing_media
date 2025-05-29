@@ -1,4 +1,4 @@
-package mk
+package parsers
 
 import (
 	"fmt"
@@ -11,22 +11,22 @@ import (
 
 // Константы (Цветовые константы ANSI)
 const (
-	quantityLinks = 100
-	mkURL         = "https://www.mk.ru"
-	mkURLByDate   = "https://www.mk.ru/news/%d/%d/%d/"
+	quantityLinksMK = 100
+	mkURL           = "https://www.mk.ru"
+	mkURLByDate     = "https://www.mk.ru/news/%d/%d/%d/"
 )
 
 func MKMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks()
+	_ = parsingLinksMK()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
+func parsingLinksMK() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -36,7 +36,7 @@ func parsingLinks() []Data {
 			return
 		}
 		if h.Type == html.ElementNode && h.Data == "a" && HasAllClasses(h, "news-listing__item-link") {
-			if len(foundLinks) < quantityLinks {
+			if len(foundLinks) < quantityLinksMK {
 				if href, ok := GetAttribute(h, "href"); ok {
 					// Убедимся, что это ссылка на MK
 					if strings.HasPrefix(href, mkURL) {
@@ -48,7 +48,7 @@ func parsingLinks() []Data {
 				}
 			}
 		}
-		if len(foundLinks) < quantityLinks {
+		if len(foundLinks) < quantityLinksMK {
 			for c := h.FirstChild; c != nil; c = c.NextSibling {
 				extractLinks(c)
 			}
@@ -57,8 +57,8 @@ func parsingLinks() []Data {
 
 	progressBarLength := 40
 
-	for daysAgo := 0; len(foundLinks) < quantityLinks; daysAgo++ {
-		nowURL := generateURLForDate(mkURLByDate, generateURLForPastDate(daysAgo))
+	for daysAgo := 0; len(foundLinks) < quantityLinksMK; daysAgo++ {
+		nowURL := generateURLForDate(mkURLByDate, GenerateURLForPastDate(daysAgo))
 		doc, err := GetHTML(nowURL)
 		if err != nil {
 			fmt.Printf("\n%s[CRITICAL] Не удалось получить страницy %s. Ошибка: %s. Прерывание парсинга дополнительных страниц.%s\n", ColorRed, nowURL, err, ColorReset)
@@ -67,7 +67,7 @@ func parsingLinks() []Data {
 
 		extractLinks(doc)
 
-		percent := int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+		percent := int((float64(len(foundLinks)) / float64(quantityLinksMK)) * 100)
 		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
 		if completedChars < 0 {
 			completedChars = 0
@@ -75,7 +75,7 @@ func parsingLinks() []Data {
 			completedChars = progressBarLength
 		}
 		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksMK)
 		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 
 	}
@@ -85,10 +85,10 @@ func parsingLinks() []Data {
 	} else {
 		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", ColorYellow, ColorReset)
 	}
-	return parsingPage(foundLinks)
+	return parsingPageMK(foundLinks)
 }
 
-func parsingPage(links []string) []Data {
+func parsingPageMK(links []string) []Data {
 	var articlesData []Data
 	totalLinks := len(links)
 
@@ -247,11 +247,4 @@ func generateURLForDate(url string, date time.Time) string {
 	month := int(date.Month()) // time.Month() возвращает тип time.Month, приводим к int
 	day := date.Day()
 	return fmt.Sprintf(url, year, month, day)
-}
-
-// generateURLForPastDate генерирует URL для даты N дней назад
-func generateURLForPastDate(daysAgo int) time.Time {
-	today := time.Now()
-	pastDate := today.AddDate(0, 0, -daysAgo) // Вычитаем дни
-	return pastDate
 }

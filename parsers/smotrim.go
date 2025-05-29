@@ -1,4 +1,4 @@
-package smotrim
+package parsers
 
 import (
 	"encoding/json"
@@ -40,22 +40,22 @@ type SmotrimAPIResponse struct {
 
 // Константы (Цветовые константы ANSI)
 const (
-	quantityLinks     = 100
-	smotrimURL        = "https://smotrim.ru"
-	smotrimURLNewPage = "https://smotrim.ru/api/search-articles?q=&page=%d&sort=date&date=%s"
+	quantityLinksSmotrim = 100
+	smotrimURL           = "https://smotrim.ru"
+	smotrimURLNewPage    = "https://smotrim.ru/api/search-articles?q=&page=%d&sort=date&date=%s"
 )
 
 func SmotrimMain() {
 	totalStartTime := time.Now()
 
 	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinks()
+	_ = parsingLinksSmotrim()
 
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinks() []Data {
+func parsingLinksSmotrim() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool) // Карта для отслеживания уникальных ссылок
 
@@ -66,8 +66,8 @@ func parsingLinks() []Data {
 	// Начальное отображение прогресс-бара
 	initialPercent := 0
 	// len(foundLinks) здесь 0, поэтому initialPercent будет 0
-	if quantityLinks > 0 && len(foundLinks) > 0 {
-		initialPercent = int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+	if quantityLinksSmotrim > 0 && len(foundLinks) > 0 {
+		initialPercent = int((float64(len(foundLinks)) / float64(quantityLinksSmotrim)) * 100)
 	}
 	if initialPercent > 100 {
 		initialPercent = 100
@@ -80,27 +80,27 @@ func parsingLinks() []Data {
 		initialCompletedChars = progressBarLength
 	}
 	barInitial := strings.Repeat("█", initialCompletedChars) + strings.Repeat("-", progressBarLength-initialCompletedChars)
-	countStrInitial := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+	countStrInitial := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksSmotrim)
 	fmt.Printf("\r[%s] %3d%% %s%s%s", barInitial, initialPercent, ColorGreen, countStrInitial, ColorReset)
 
 	// Внешний цикл: итерация по датам
-	for daysAgo := 0; len(foundLinks) < quantityLinks; daysAgo++ {
-		currentDateFormatted := generateURLForDateFormatted(generateURLForPastDate(daysAgo))
+	for daysAgo := 0; len(foundLinks) < quantityLinksSmotrim; daysAgo++ {
+		currentDateFormatted := GenerateURLForDateFormatted(GenerateURLForPastDate(daysAgo))
 		// 1. Формируем БАЗОВЫЙ URL для ТЕКУЩЕЙ ДАТЫ (первая страница API всегда page=1)
 		paginatingURL := fmt.Sprintf(smotrimURLNewPage, 1, currentDateFormatted)
 
 		// fmt.Printf("\n%s[DEBUG] Проверка даты: %s%s\n", colorYellow, currentDateFormatted, colorReset) // Для отладки
 
 		// Внутренний цикл: пагинация для ТЕКУЩЕЙ ДАТЫ
-		for paginatingURL != "" && len(foundLinks) < quantityLinks {
+		for paginatingURL != "" && len(foundLinks) < quantityLinksSmotrim {
 			jsonData, err := GetJSON(paginatingURL)
 			if err != nil {
 				fmt.Printf("\n%s[CRITICAL] Не удалось получить JSON с %s. Ошибка: %s. Остановка пагинации для этой даты.%s\n", ColorRed, paginatingURL, err, ColorReset)
 				paginatingURL = "" // Прекращаем пагинацию для этой даты
 				// Перерисовываем прогресс-бар в текущем состоянии
 				currentPercent := 0
-				if quantityLinks > 0 {
-					currentPercent = int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+				if quantityLinksSmotrim > 0 {
+					currentPercent = int((float64(len(foundLinks)) / float64(quantityLinksSmotrim)) * 100)
 				}
 				if currentPercent > 100 {
 					currentPercent = 100
@@ -113,7 +113,7 @@ func parsingLinks() []Data {
 					currentCompletedChars = progressBarLength
 				}
 				currentBar := strings.Repeat("█", currentCompletedChars) + strings.Repeat("-", progressBarLength-currentCompletedChars)
-				currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+				currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksSmotrim)
 				fmt.Printf("\r[%s] %3d%% %s%s%s", currentBar, currentPercent, ColorGreen, currentCountStr, ColorReset)
 				continue // Завершит текущую итерацию внутреннего цикла, т.к. paginatingURL пуст
 			}
@@ -124,8 +124,8 @@ func parsingLinks() []Data {
 				fmt.Printf("\n%s[ERROR] Не удалось пере-маршализовать JSON для страницы %s. Ошибка: %s. Остановка пагинации для этой даты.%s\n", ColorRed, paginatingURL, err, ColorReset)
 				paginatingURL = ""
 				currentPercent := 0
-				if quantityLinks > 0 {
-					currentPercent = int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+				if quantityLinksSmotrim > 0 {
+					currentPercent = int((float64(len(foundLinks)) / float64(quantityLinksSmotrim)) * 100)
 				}
 				if currentPercent > 100 {
 					currentPercent = 100
@@ -138,7 +138,7 @@ func parsingLinks() []Data {
 					currentCompletedChars = progressBarLength
 				}
 				currentBar := strings.Repeat("█", currentCompletedChars) + strings.Repeat("-", progressBarLength-currentCompletedChars)
-				currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+				currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksSmotrim)
 				fmt.Printf("\r[%s] %3d%% %s%s%s", currentBar, currentPercent, ColorGreen, currentCountStr, ColorReset)
 				break
 			}
@@ -147,8 +147,8 @@ func parsingLinks() []Data {
 				fmt.Printf("\n%s[CRITICAL] Не удалось преобразовать JSON в структуру SmotrimAPIResponse для страницы %s. Ошибка: %s. Остановка пагинации для этой даты.%s\n", ColorRed, paginatingURL, err, ColorReset)
 				paginatingURL = ""
 				currentPercent := 0
-				if quantityLinks > 0 {
-					currentPercent = int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+				if quantityLinksSmotrim > 0 {
+					currentPercent = int((float64(len(foundLinks)) / float64(quantityLinksSmotrim)) * 100)
 				}
 				if currentPercent > 100 {
 					currentPercent = 100
@@ -161,7 +161,7 @@ func parsingLinks() []Data {
 					currentCompletedChars = progressBarLength
 				}
 				currentBar := strings.Repeat("█", currentCompletedChars) + strings.Repeat("-", progressBarLength-currentCompletedChars)
-				currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+				currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksSmotrim)
 				fmt.Printf("\r[%s] %3d%% %s%s%s", currentBar, currentPercent, ColorGreen, currentCountStr, ColorReset)
 				break
 			}
@@ -187,7 +187,7 @@ func parsingLinks() []Data {
 
 			if primaryContentBlock != nil {
 				for _, item := range primaryContentBlock.List {
-					if len(foundLinks) >= quantityLinks {
+					if len(foundLinks) >= quantityLinksSmotrim {
 						break
 					}
 					if item.Link == "" || item.Type != "article" {
@@ -218,8 +218,8 @@ func parsingLinks() []Data {
 						fmt.Printf("\n%s[WARNING] Неожиданный формат URL для следующей страницы: '%s' из блока '%s'. Остановка пагинации для этой даты.%s\n", ColorYellow, relativeNextURL, primaryContentBlock.Alias, ColorReset)
 						nextPaginatingURLFromCurrentResponse = ""
 						currentPercent := 0
-						if quantityLinks > 0 {
-							currentPercent = int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+						if quantityLinksSmotrim > 0 {
+							currentPercent = int((float64(len(foundLinks)) / float64(quantityLinksSmotrim)) * 100)
 						}
 						if currentPercent > 100 {
 							currentPercent = 100
@@ -232,7 +232,7 @@ func parsingLinks() []Data {
 							currentCompletedChars = progressBarLength
 						}
 						currentBar := strings.Repeat("█", currentCompletedChars) + strings.Repeat("-", progressBarLength-currentCompletedChars)
-						currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+						currentCountStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksSmotrim)
 						fmt.Printf("\r[%s] %3d%% %s%s%s", currentBar, currentPercent, ColorGreen, currentCountStr, ColorReset)
 					}
 				}
@@ -242,8 +242,8 @@ func parsingLinks() []Data {
 
 			// Обновление прогресс-бара
 			percent := 0
-			if quantityLinks > 0 { // Предотвращение деления на ноль
-				percent = int((float64(len(foundLinks)) / float64(quantityLinks)) * 100)
+			if quantityLinksSmotrim > 0 { // Предотвращение деления на ноль
+				percent = int((float64(len(foundLinks)) / float64(quantityLinksSmotrim)) * 100)
 			}
 			if percent > 100 {
 				percent = 100
@@ -258,7 +258,7 @@ func parsingLinks() []Data {
 			}
 
 			bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-			countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinks)
+			countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksSmotrim)
 
 			// Очищаем предыдущую строку прогресс-бара, чтобы избежать артефактов
 			// Длина очистки должна быть достаточной для самой длинной возможной строки прогресс-бара
@@ -266,12 +266,12 @@ func parsingLinks() []Data {
 			fmt.Printf("\r%s", strings.Repeat(" ", clearLength))
 			fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
 
-			if len(foundLinks) >= quantityLinks {
+			if len(foundLinks) >= quantityLinksSmotrim {
 				break
 			}
 		}
 
-		if len(foundLinks) >= quantityLinks {
+		if len(foundLinks) >= quantityLinksSmotrim {
 			break
 		}
 	}
@@ -287,10 +287,10 @@ func parsingLinks() []Data {
 		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга (возможно, за указанный период или с текущими фильтрами).%s\n", ColorYellow, ColorReset)
 	}
 
-	return parsingPage(foundLinks)
+	return parsingPageSmotrim(foundLinks)
 }
 
-func parsingPage(links []string) []Data {
+func parsingPageSmotrim(links []string) []Data {
 	var articlesData []Data
 	var errLinks []string
 	totalLinks := len(links)
@@ -443,8 +443,8 @@ func parsingPage(links []string) []Data {
 		//	fmt.Printf("Тело:\n%s\n", product.Body)
 		//	fmt.Println(strings.Repeat("-", 100))
 		//}
-		if len(articlesData) < quantityLinks {
-			fmt.Printf("\n%s[WARNING] Не собрано %d статей.%s\n", ColorYellow, quantityLinks-len(articlesData), ColorReset)
+		if len(articlesData) < quantityLinksSmotrim {
+			fmt.Printf("\n%s[WARNING] Не собрано %d статей.%s\n", ColorYellow, quantityLinksSmotrim-len(articlesData), ColorReset)
 			for i, el := range errLinks {
 				fmt.Printf("%d. %s\n", i+1, el)
 			}
@@ -455,19 +455,4 @@ func parsingPage(links []string) []Data {
 		// Этот случай уже обработан в начале функции
 	}
 	return articlesData
-}
-
-// Альтернативная, более короткая версия generateURLForDate с использованием fmt.Sprintf
-func generateURLForDateFormatted(date time.Time) string {
-	year := fmt.Sprintf("%d", date.Year())
-	month := fmt.Sprintf("%02d", date.Month()) // %02d - означает двузначное число, с ведущим нулем если нужно
-	day := fmt.Sprintf("%02d", date.Day())     // %02d - означает двузначное число, с ведущим нулем если нужно
-	return fmt.Sprintf("%s.%s.%s", day, month, year)
-}
-
-// generateURLForPastDate генерирует URL для даты N дней назад
-func generateURLForPastDate(daysAgo int) time.Time {
-	today := time.Now()
-	pastDate := today.AddDate(0, 0, -daysAgo) // Вычитаем дни
-	return pastDate
 }
