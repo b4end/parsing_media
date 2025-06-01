@@ -1,12 +1,13 @@
 package utils
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 )
 
@@ -27,7 +28,7 @@ const (
 	ColorYellow = "\033[33m"
 )
 
-func GetHTML(pageUrl string) (*html.Node, error) {
+func GetHTML(pageUrl string) (*goquery.Document, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -47,14 +48,14 @@ func GetHTML(pageUrl string) (*html.Node, error) {
 		return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
 	}
 
-	doc, err := html.Parse(resp.Body)
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("парсинг HTML со страницы %s: %w", pageUrl, err)
+		return nil, fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
 	}
 	return doc, nil
 }
 
-func GetJSON(pageUrl string) (interface{}, error) {
+func GetJSON(pageUrl string) ([]byte, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -75,12 +76,11 @@ func GetJSON(pageUrl string) (interface{}, error) {
 		return nil, fmt.Errorf("HTTP-запрос к JSON API %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
 	}
 
-	var jsonData interface{}
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&jsonData); err != nil {
-		return nil, fmt.Errorf("декодирование JSON-ответа со страницы %s: %w", pageUrl, err)
+	bodyBytes, err := io.ReadAll(resp.Body) // Используем ReadAll из utils или io
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения тела JSON ответа с %s: %w", pageUrl, err)
 	}
-	return jsonData, nil
+	return bodyBytes, nil
 }
 
 func ExtractText(n *html.Node) string {
@@ -170,4 +170,58 @@ func LimitString(s string, length int) string {
 		return s[:length]
 	}
 	return s[:length-3] + "..."
+}
+
+// generateURLForPastDate генерирует URL для даты N дней назад
+func GenerateURLForPastDate(daysAgo int) time.Time {
+	today := time.Now()
+	pastDate := today.AddDate(0, 0, -daysAgo) // Вычитаем дни
+	return pastDate
+}
+
+// Альтернативная, более короткая версия generateURLForDate с использованием fmt.Sprintf
+func GenerateURLForDateFormatted(date time.Time) string {
+	year := fmt.Sprintf("%d", date.Year())
+	month := fmt.Sprintf("%02d", date.Month()) // %02d - означает двузначное число, с ведущим нулем если нужно
+	day := fmt.Sprintf("%02d", date.Day())     // %02d - означает двузначное число, с ведущим нулем если нужно
+	return fmt.Sprintf("%s.%s.%s", day, month, year)
+}
+
+func ProgressBar(title string, body string, pageStatusMessage string, statusMessageColor string, i int, totalLinks int) {
+	progressBarLength := 40
+	statusTextWidth := 90
+
+	percent := int((float64(i+1) / float64(totalLinks)) * 100)
+	completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
+	if completedChars < 0 {
+		completedChars = 0
+	}
+	if completedChars > progressBarLength {
+		completedChars = progressBarLength
+	}
+
+	bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
+	countStr := fmt.Sprintf("(%d/%d) ", i+1, totalLinks)
+
+	// Рассчитываем доступную ширину для сообщения статуса
+	remainingWidthForMessage := statusTextWidth - len(countStr)
+	if remainingWidthForMessage < 10 { // Минимальная ширина для сообщения
+		remainingWidthForMessage = 10
+	}
+
+	// Обрезаем сообщение статуса, если оно слишком длинное
+	displayStatusMessage := pageStatusMessage
+	if len(displayStatusMessage) > remainingWidthForMessage {
+		displayStatusMessage = LimitString(displayStatusMessage, remainingWidthForMessage)
+	}
+
+	// Формируем полную строку статуса, выравнивая ее пробелами
+	fullStatusText := countStr + displayStatusMessage
+	if len(fullStatusText) < statusTextWidth {
+		fullStatusText += strings.Repeat(" ", statusTextWidth-len(fullStatusText))
+	} else if len(fullStatusText) > statusTextWidth { // На всякий случай, если LimitString не сработал идеально
+		fullStatusText = fullStatusText[:statusTextWidth]
+	}
+
+	fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
 }

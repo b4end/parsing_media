@@ -6,234 +6,133 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
+	"github.com/PuerkitoBio/goquery"
 )
 
-// Константы (Цветовые константы ANSI)
 const (
-	quantityLinksKommers = 100
-	kommersURL           = "https://www.kommersant.ru/"
-	kommersURLNews       = "https://www.kommersant.ru/lenta"
-	kommersURLNewPage    = "https://www.kommersant.ru/lenta?page=%d"
+	kommersURL     = "https://www.kommersant.ru"
+	kommersURLNews = "https://www.kommersant.ru/lenta"
 )
 
 func KommersMain() {
 	totalStartTime := time.Now()
 
-	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinksKommers()
+	fmt.Printf("%s[INFO] Запуск парсера Kommersant.ru...%s\n", ColorYellow, ColorReset)
+	_ = getLinksKommers()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("\n%s[INFO] Общее время выполнения парсера Kommersant.ru: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinksKommers() []Data {
-	var found_links []string // Срез (массив) для хранения найденных ссылок.
+func getLinksKommers() []Data {
+	var foundLinks []string
+	seenLinks := make(map[string]bool)
 
-	var extractLinks func(*html.Node) // Рекурсивная функция обхода HTML для получения ссылок.
-	extractLinks = func(h *html.Node) {
-		if h.Type == html.ElementNode && h.Data == "a" { // Проверка того, является ли узел элементом <a>.
-			var hrefValue string    // href="[значение, которое будет записано в переменную]".
-			var classValue string   // class="[значение, которое будет записано в переменную]".
-			isClassCorrect := false // Является ли class="" верным (который нам нужен).
+	fmt.Printf("%s[INFO] Начало парсинга ссылок с %s...%s\n", ColorYellow, kommersURLNews, ColorReset)
 
-			for _, attr := range h.Attr { // Ищем атрибуты "href" и "class":
-				if attr.Key == "href" {
-					hrefValue = attr.Val
-				}
-				if attr.Key == "class" {
-					classValue = attr.Val
-				}
-			}
-
-			if classValue == "uho__link uho__link--overlay" { // Проверяем, соответствует ли класс искомому.
-				isClassCorrect = true
-			}
-
-			if isClassCorrect && hrefValue != "" { // Если класс совпадает и есть атрибут href — добавляем ссылку.
-				//isDuplicate := false // Добавляем ссылку, если она еще не была добавлена.
-				//for _, l := range found_links {
-				//	if l == hrefValue {
-				//		isDuplicate = true
-				//		break
-				//	}
-				//}
-
-				if !strings.HasPrefix(hrefValue, "https://") { // Проверка того, что это ссылка на «Lenta.ru».
-					found_links = append(found_links, fmt.Sprint("https://www.kommersant.ru"+hrefValue))
-				}
-			}
-		}
-
-		if len(found_links) < quantityLinksKommers {
-			for c := h.FirstChild; c != nil; c = c.NextSibling { // Рекурсивно обходим всех потомков текущего узла.
-				extractLinks(c)
-			}
-		}
-	}
-
-	fmt.Println("\nНачало парсинга ссылок...")
-
-	// Получаем HTML-документ ленты новостей
-	doc, err := GetHTML(kommersURL)
+	doc, err := GetHTML(kommersURLNews)
 	if err != nil {
-		fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", kommersURL, err)
+		fmt.Printf("%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorRed, kommersURLNews, err, ColorReset)
+		return getPageKommers(foundLinks)
 	}
 
-	extractLinks(doc)
-	progressBarLength := 40
+	doc.Find("a.uho__link.uho__link--overlay").Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr("href")
+		if exists {
+			fullHref := ""
+			if strings.HasPrefix(href, "/") {
+				fullHref = kommersURL + href
+			} else if strings.HasPrefix(href, kommersURL) {
+				fullHref = href
+			}
 
-	// Цикл для загрузки ссылок из дополнительных страниц
-	for pageNumber := 1; len(found_links) < quantityLinksKommers; pageNumber++ {
-
-		// Парсинг доп ссылки
-		doc, err := GetHTML("https://www.kommersant.ru/lenta?page=" + fmt.Sprint(pageNumber))
-		if err != nil {
-			fmt.Printf("Ошибка при получении HTML со страницы %s: %v\n", kommersURL, err)
+			if fullHref != "" && !seenLinks[fullHref] {
+				seenLinks[fullHref] = true
+				foundLinks = append(foundLinks, fullHref)
+			}
 		}
+	})
 
-		extractLinks(doc)
-
-		// Расчет процента выполнения для прогресс-бара
-		percent := int((float64(len(found_links)) / float64(quantityLinksKommers)) * 100)
-		// Расчет количества символов '█' для заполненной части прогресс-бара
-		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
-		// Коррекция, чтобы completedChars не выходил за пределы длины прогресс-бара
-		if completedChars < 0 {
-			completedChars = 0
-		}
-		if completedChars > progressBarLength {
-			completedChars = progressBarLength
-		}
-
-		// Формирование строки прогресс-бара: '█' для выполненной части, '-' для оставшейся
-		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		// Формирование строки счетчика обработанных ссылок (например, "(10/100) ")
-		countStr := fmt.Sprintf("(%d/%d) ", len(found_links), quantityLinksKommers)
-
-		// Выводим прогресс-бар, процент выполнения и статусное сообщение
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
-	}
-
-	// Выводим количество ссылок
-	if len(found_links) > 0 {
-		fmt.Printf("\n\nНайдено %d уникальных ссылок на статьи\n", len(found_links))
+	if len(foundLinks) > 0 {
+		fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи.%s\n", ColorGreen, len(foundLinks), ColorReset)
 	} else {
-		fmt.Printf("\nНе найдено ссылок с классом '%s' на странице %s.\n", "uho__link uho__link--overlay", kommersURL)
+		fmt.Printf("%s[WARNING] Не найдено ссылок с селектором 'a.uho__link.uho__link--overlay' на странице %s.%s\n", ColorYellow, kommersURLNews, ColorReset)
 	}
 
-	return parsingPageKommers(found_links)
+	return getPageKommers(foundLinks)
 }
 
-func parsingPageKommers(links []string) []Data {
+func getPageKommers(links []string) []Data {
 	var products []Data
+	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		fmt.Println("Нет ссылок для парсинга.")
+		fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
-	} else {
-		fmt.Println("\nНачало парсинга статей...")
 	}
+	fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Kommersant.ru...%s\n", ColorYellow, totalLinks, ColorReset)
 
-	progressBarLength := 40
-	statusTextWidth := 80
-
-	for i, URL := range links {
+	for i, pageURL := range links {
 		var title, body string
 		var pageStatusMessage string
 		var statusMessageColor = ColorReset
+		parsedSuccessfully := false
 
-		doc, err := GetHTML(URL)
+		doc, err := GetHTML(pageURL)
 		if err != nil {
 			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			statusMessageColor = ColorRed // Ошибка - красный цвет
+			statusMessageColor = ColorRed
+			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
 		} else {
-			var get_data func(*html.Node)
-			get_data = func(h *html.Node) {
-				if h.Type == html.ElementNode {
-					var classValue string
-					for _, attr := range h.Attr {
-						if attr.Key == "class" {
-							classValue = attr.Val
-							break
-						}
+			title = strings.TrimSpace(doc.Find(".doc_header__name.js-search-mark").First().Text())
+			var bodyBuilder strings.Builder
+			doc.Find(".doc__text").Each(func(_ int, s *goquery.Selection) {
+				currentTextPart := strings.TrimSpace(s.Text())
+				if currentTextPart != "" {
+					if bodyBuilder.Len() > 0 {
+						bodyBuilder.WriteString("\n\n")
 					}
-
-					if classValue == "doc_header__name js-search-mark" {
-						if title == "" {
-							title = strings.TrimSpace(ExtractText(h))
-						}
-					} else if classValue == "doc__text" {
-						currentTextPart := strings.TrimSpace(ExtractText(h))
-						if currentTextPart != "" {
-							if body != "" {
-								body += "\n"
-							}
-							body += currentTextPart
-						}
-					}
+					bodyBuilder.WriteString(currentTextPart)
 				}
-				for c := h.FirstChild; c != nil; c = c.NextSibling {
-					get_data(c)
-				}
-			}
-			get_data(doc)
+			})
+			body = bodyBuilder.String()
 
-			if title != "" || body != "" {
+			if title != "" && body != "" {
 				products = append(products, Data{Title: title, Body: body})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 50))
-				statusMessageColor = ColorGreen // Успех - зеленый
+				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
+				statusMessageColor = ColorGreen
+				parsedSuccessfully = true
 			} else {
-				pageStatusMessage = fmt.Sprintf("Нет данных: %s", LimitString(URL, 50))
-				statusMessageColor = ColorRed // Нет данных - красный
+				statusMessageColor = ColorYellow
+				pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
 			}
 		}
 
-		percent := int((float64(i+1) / float64(totalLinks)) * 100)
-		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
-		if completedChars < 0 {
-			completedChars = 0
-		}
-		if completedChars > progressBarLength {
-			completedChars = progressBarLength
+		if !parsedSuccessfully && err == nil {
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
 		}
 
-		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		countStr := fmt.Sprintf("(%d/%d) ", i+1, totalLinks)
-		remainingWidthForMessage := statusTextWidth - len(countStr)
-		if remainingWidthForMessage < 10 {
-			remainingWidthForMessage = 10
-		}
-
-		if len(pageStatusMessage) > remainingWidthForMessage {
-			pageStatusMessage = pageStatusMessage[:remainingWidthForMessage-3] + "..."
-		}
-
-		fullStatusText := countStr + pageStatusMessage
-		if len(fullStatusText) < statusTextWidth {
-			fullStatusText += strings.Repeat(" ", statusTextWidth-len(fullStatusText))
-		} else if len(fullStatusText) > statusTextWidth {
-			fullStatusText = fullStatusText[:statusTextWidth]
-		}
-
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
+		ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
-	fmt.Println(strings.Repeat(" ", progressBarLength+statusTextWidth+15))
-	fmt.Printf("Парсинг завершен. Собрано %d статей.\n", len(products))
-
-	//fmt.Println("\n--- Собранные данные ---")
-	if len(products) == 0 {
-		fmt.Println("\nНе удалось собрать данные ни с одной страницы.")
+	if len(products) > 0 {
+		fmt.Printf("\n%s[INFO] Парсинг статей Kommersant.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
+		if len(errItems) > 0 {
+			fmt.Printf("%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorYellow, len(errItems), totalLinks, ColorReset)
+			for idx, itemMessage := range errItems {
+				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
+			}
+		}
+	} else if totalLinks > 0 {
+		fmt.Printf("\n%s[ERROR] Парсинг статей Kommersant.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorRed, totalLinks, ColorReset)
+		if len(errItems) > 0 {
+			fmt.Printf("%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorYellow, ColorReset)
+			for idx, itemMessage := range errItems {
+				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
+			}
+		}
 	}
-
-	//for idx, product := range products {
-	//	fmt.Printf("\nСтатья #%d\n", idx+1)
-	//	fmt.Printf("Заголовок: %s\n", product.Title)
-	//	fmt.Printf("Тело:\n%s\n", product.Body)
-	//	fmt.Println(strings.Repeat("-", 100))
-	//}
 
 	return products
 }

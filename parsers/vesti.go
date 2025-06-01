@@ -1,301 +1,138 @@
 package parsers
 
 import (
-	"encoding/json"
 	"fmt"
 	. "parsing_media/utils"
 	"strings"
 	"time"
 
-	"golang.org/x/net/html"
+	"github.com/PuerkitoBio/goquery"
 )
 
-// VestiAPINewsItem определяет структуру для одного элемента новости из JSON API
-type VestiAPINewsItem struct {
-	URL string `json:"url"`
-}
-
-// VestiAPIResponse определяет структуру для ответа JSON API
-type VestiAPIResponse struct {
-	Success    bool `json:"success"`
-	Pagination struct {
-		Next string `json:"next"`
-	} `json:"pagination"`
-	Data []VestiAPINewsItem `json:"data"`
-}
-
-// Константы (Цветовые константы ANSI)
 const (
-	quantityLinksVesti = 100
-	vestiURL           = "https://www.vesti.ru"
-	vestiURLNews       = "https://www.vesti.ru/news"
-	vestiURLNewPage    = "https://www.vesti.ru/api/news?page=%d"
+	vestiURL     = "https://www.vesti.ru"
+	vestiURLNews = "https://www.vesti.ru/news"
 )
 
 func VestiMain() {
 	totalStartTime := time.Now()
 
-	fmt.Printf("%s[INFO] Запуск программы...%s\n", ColorYellow, ColorReset)
-	_ = parsingLinksVesti()
+	fmt.Printf("%s[INFO] Запуск парсера Vesti.ru...%s\n", ColorYellow, ColorReset)
+	_ = getLinksVesti()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения программы: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("\n%s[INFO] Общее время выполнения парсера Vesti.ru: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func parsingLinksVesti() []Data {
+func getLinksVesti() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	var extractLinks func(*html.Node)
-	extractLinks = func(h *html.Node) {
-		if h == nil {
-			return
-		}
-		if h.Type == html.ElementNode && h.Data == "a" && HasAllClasses(h, "list__pic-wrapper") {
-			if len(foundLinks) < quantityLinksVesti {
-				if href, ok := GetAttribute(h, "href"); ok {
-					fullHref := ""
-					if strings.HasPrefix(href, "/") {
-						fullHref = vestiURL + href
-					} else if strings.HasPrefix(href, vestiURL) {
-						fullHref = href
-					}
-					if fullHref != "" && !seenLinks[fullHref] {
-						seenLinks[fullHref] = true
-						foundLinks = append(foundLinks, fullHref)
-					}
-				}
-			}
-		}
-		if len(foundLinks) < quantityLinksVesti {
-			for c := h.FirstChild; c != nil; c = c.NextSibling {
-				extractLinks(c)
-			}
-		}
-	}
+	fmt.Printf("%s[INFO] Начало парсинга ссылок с %s...%s\n", ColorYellow, vestiURLNews, ColorReset)
 
-	fmt.Printf("\n%s[INFO] Начало сбора ссылок на статьи...%s\n", ColorYellow, ColorReset)
 	doc, err := GetHTML(vestiURLNews)
 	if err != nil {
-		fmt.Printf("\n%s[CRITICAL] Не удалось загрузить стартовую страницу %s для первоначального сбора ссылок. Ошибка: %s. Завершение работы.%s\n", ColorRed, vestiURLNews, err, ColorReset)
-		return nil
+		fmt.Printf("%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorRed, vestiURLNews, err, ColorReset)
+		return getPageVesti(foundLinks)
 	}
-	extractLinks(doc)
 
-	progressBarLength := 40
-	for numPage := 2; len(foundLinks) < quantityLinksVesti; numPage++ {
-		newURL := fmt.Sprintf(vestiURLNewPage, numPage)
-		jsonData, err := GetJSON(newURL)
-		if err != nil {
-			fmt.Printf("\n%s[CRITICAL] Не удалось получить JSON-данные со страницы %s. Ошибка: %s. Прерывание парсинга дополнительных страниц.%s\n", ColorRed, newURL, err, ColorReset)
-			break
-		}
-
-		var apiResponse VestiAPIResponse
-		jsonBytes, err := json.Marshal(jsonData)
-		if err != nil {
-			fmt.Printf("\n%s[ERROR] Не удалось пере-маршализовать JSON для страницы %s. Ошибка: %s. Пропуск этой страницы.%s\n", ColorRed, newURL, err, ColorReset)
-			continue
-		}
-		err = json.Unmarshal(jsonBytes, &apiResponse)
-		if err != nil {
-			fmt.Printf("\n%s[CRITICAL] Не удалось преобразовать JSON в структуру VestiAPIResponse для страницы %s. Ошибка: %s. Прерывание парсинга дополнительных страниц.%s\n", ColorRed, newURL, err, ColorReset)
-			break
-		}
-
-		if !apiResponse.Success {
-			fmt.Printf("\n%s[WARNING] API для страницы %s сообщило об ошибке (success: false). Прерывание парсинга дополнительных страниц.%s\n", ColorYellow, newURL, ColorReset)
-			break
-		}
-		if len(apiResponse.Data) == 0 {
-			fmt.Printf("\n%s[INFO] На странице %s (JSON) больше нет новостей. Завершение сбора ссылок (достигнут конец данных).%s\n", ColorYellow, newURL, ColorReset)
-			break
-		}
-
-		for _, item := range apiResponse.Data {
-			if len(foundLinks) >= quantityLinksVesti {
-				break
-			}
-			if item.URL == "" {
-				continue
-			}
+	doc.Find("a.list__pic-wrapper").Each(func(i int, s *goquery.Selection) {
+		href, exists := s.Attr("href")
+		if exists {
 			fullHref := ""
-			if strings.HasPrefix(item.URL, "/") {
-				fullHref = vestiURL + item.URL
-			} else if strings.HasPrefix(item.URL, vestiURL) {
-				fullHref = item.URL
-			} else {
-				continue
+			if strings.HasPrefix(href, "/") {
+				fullHref = vestiURL + href
+			} else if strings.HasPrefix(href, vestiURL) {
+				fullHref = href
 			}
+
 			if fullHref != "" && !seenLinks[fullHref] {
 				seenLinks[fullHref] = true
 				foundLinks = append(foundLinks, fullHref)
 			}
 		}
-		percent := int((float64(len(foundLinks)) / float64(quantityLinksVesti)) * 100)
-		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
-		if completedChars < 0 {
-			completedChars = 0
-		} else if completedChars > progressBarLength {
-			completedChars = progressBarLength
-		}
-		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		countStr := fmt.Sprintf("(%d/%d) ", len(foundLinks), quantityLinksVesti)
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, ColorGreen, countStr, ColorReset)
-	}
+	})
 
 	if len(foundLinks) > 0 {
-		fmt.Printf("\n\n%s[INFO] Собрано %d уникальных ссылок на статьи.%s\n", ColorGreen, len(foundLinks), ColorReset)
+		fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи (с HTML страницы).%s\n", ColorGreen, len(foundLinks), ColorReset)
 	} else {
-		fmt.Printf("\n%s[WARNING] Не найдено ссылок для парсинга.%s\n", ColorYellow, ColorReset)
+		fmt.Printf("%s[WARNING] Не найдено ссылок с селектором 'a.list__pic-wrapper' на странице %s.%s\n", ColorYellow, vestiURLNews, ColorReset)
 	}
-	return parsingPageVesti(foundLinks)
+
+	return getPageVesti(foundLinks)
 }
 
-func parsingPageVesti(links []string) []Data {
-	var articlesData []Data
+func getPageVesti(links []string) []Data {
+	var products []Data
+	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		fmt.Printf("\n%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
-		return nil
+		fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
+		return products
 	}
-	fmt.Printf("\n%s[INFO] Начало парсинга %d статей...%s\n", ColorYellow, totalLinks, ColorReset)
+	fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Vesti.ru...%s\n", ColorYellow, totalLinks, ColorReset)
 
-	progressBarLength := 40
-	statusTextWidth := 80
-
-	for i, url := range links {
+	for i, pageURL := range links {
 		var title, body string
 		var pageStatusMessage string
 		var statusMessageColor = ColorReset
+		parsedSuccessfully := false
 
-		doc, err := GetHTML(url)
+		doc, err := GetHTML(pageURL)
 		if err != nil {
-			// Формируем сообщение для прогресс-бара
 			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
 			statusMessageColor = ColorRed
+			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
 		} else {
-			// Рекурсивная функция для поиска заголовка и тела статьи
-			var extractData func(*html.Node)
-			extractData = func(n *html.Node) {
-				// Если и заголовок, и тело уже найдены, дальше не ищем
-				if title != "" && body != "" {
-					return
-				}
-
-				if n.Type == html.ElementNode {
-					// Поиск заголовка
-					if title == "" && n.Data == "h1" {
-						if classVal, ok := GetAttribute(n, "class"); ok && classVal == "article__title" {
-							title = strings.TrimSpace(ExtractText(n))
-						}
+			title = strings.TrimSpace(doc.Find("h1.article__title").First().Text())
+			var bodyBuilder strings.Builder
+			doc.Find(".js-mediator-article").Find("p, blockquote").Each(func(_ int, s *goquery.Selection) {
+				partText := strings.TrimSpace(s.Text())
+				if partText != "" {
+					if bodyBuilder.Len() > 0 {
+						bodyBuilder.WriteString("\n\n")
 					}
-
-					// Поиск контейнера тела статьи
-					if body == "" && n.Data == "div" {
-						if classVal, ok := GetAttribute(n, "class"); ok && classVal == "js-mediator-article" {
-							var bodyBuilder strings.Builder
-							var collectTextRecursively func(*html.Node)
-
-							collectTextRecursively = func(contentNode *html.Node) {
-								if contentNode.Type == html.ElementNode {
-									// Собираем текст из <p> и <blockquote>
-									if contentNode.Data == "p" || contentNode.Data == "blockquote" {
-										partText := strings.TrimSpace(ExtractText(contentNode))
-										if partText != "" {
-											if bodyBuilder.Len() > 0 {
-												bodyBuilder.WriteString("\n\n") // Разделяем абзацы/цитаты
-											}
-											bodyBuilder.WriteString(partText)
-										}
-										return // Текст из p/blockquote собран, дальше в его детей не идем этой функцией
-									}
-									// Пропускаем теги, которые точно не содержат текст статьи или могут его дублировать
-									if contentNode.Data == "script" || contentNode.Data == "style" ||
-										contentNode.Data == "noscript" || contentNode.Data == "iframe" ||
-										contentNode.Data == "img" || contentNode.Data == "figure" ||
-										contentNode.Data == "picture" || contentNode.Data == "video" ||
-										contentNode.Data == "audio" {
-										return
-									}
-								}
-								// Рекурсивно обходим детей текущего узла
-								for c := contentNode.FirstChild; c != nil; c = c.NextSibling {
-									collectTextRecursively(c)
-								}
-							}
-
-							// Начинаем сбор текста с детей контейнера js-mediator-article
-							for c := n.FirstChild; c != nil; c = c.NextSibling {
-								collectTextRecursively(c)
-							}
-							body = bodyBuilder.String()
-						}
-					}
+					bodyBuilder.WriteString(partText)
 				}
+			})
+			body = bodyBuilder.String()
 
-				// Продолжаем рекурсию по дочерним узлам, если что-то еще не найдено
-				if title == "" || body == "" {
-					for c := n.FirstChild; c != nil; c = c.NextSibling {
-						extractData(c)
-						// Если после обхода ребенка все нашлось, можно прервать обход остальных сиблингов
-						if title != "" && body != "" {
-							break
-						}
-					}
-				}
-			}
-			extractData(doc) // Запускаем поиск
-
-			if title != "" || body != "" {
-				articlesData = append(articlesData, Data{Title: title, Body: body})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 50))
+			if title != "" && body != "" {
+				products = append(products, Data{Title: title, Body: body})
+				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
 				statusMessageColor = ColorGreen
+				parsedSuccessfully = true
 			} else {
-				pageStatusMessage = fmt.Sprintf("Нет данных: %s", LimitString(url, 50))
-				statusMessageColor = ColorRed
+				statusMessageColor = ColorYellow
+				pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
 			}
 		}
 
-		percent := int((float64(i+1) / float64(totalLinks)) * 100)
-		completedChars := int((float64(percent) / 100.0) * float64(progressBarLength))
-		if completedChars < 0 {
-			completedChars = 0
-		} else if completedChars > progressBarLength {
-			completedChars = progressBarLength
+		if !parsedSuccessfully && err == nil {
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
 		}
 
-		bar := strings.Repeat("█", completedChars) + strings.Repeat("-", progressBarLength-completedChars)
-		countStr := fmt.Sprintf("(%d/%d) ", i+1, totalLinks)
-
-		// Обрезаем pageStatusMessage, если оно слишком длинное для выделенного места
-		availableWidthForMessage := statusTextWidth - len(countStr)
-		if availableWidthForMessage < 10 { // Минимальная ширина для сообщения
-			availableWidthForMessage = 10
-		}
-		displayMessage := LimitString(pageStatusMessage, availableWidthForMessage)
-
-		// Собираем полную строку статуса и выравниваем пробелами, если нужно
-		fullStatusText := countStr + displayMessage
-		if len(fullStatusText) < statusTextWidth {
-			fullStatusText += strings.Repeat(" ", statusTextWidth-len(fullStatusText))
-		} else if len(fullStatusText) > statusTextWidth { // На всякий случай, если limitString не идеально сработал
-			fullStatusText = fullStatusText[:statusTextWidth]
-		}
-
-		fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
+		ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
-	// Перевод строки после завершения прогресс-бара и очистка строки прогресс-бара
-	//fmt.Printf("\r%s\r", strings.Repeat(" ", progressBarLength+5+statusTextWidth+len(colorGreen)+len(colorReset))) // +5 для " xxx% "
-
-	if len(articlesData) > 0 {
-		fmt.Printf("\n\n%s[INFO] Парсинг статей завершен. Собрано %d статей.%s\n", ColorGreen, len(articlesData), ColorReset)
+	if len(products) > 0 {
+		fmt.Printf("\n%s[INFO] Парсинг статей Vesti.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
+		if len(errItems) > 0 {
+			fmt.Printf("%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorYellow, len(errItems), totalLinks, ColorReset)
+			for idx, itemMessage := range errItems {
+				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
+			}
+		}
 	} else if totalLinks > 0 {
-		fmt.Printf("\n%s[WARNING] Парсинг статей завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorYellow, totalLinks, ColorReset)
-	} else {
-		// Этот случай уже обработан в начале функции
+		fmt.Printf("\n%s[ERROR] Парсинг статей Vesti.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorRed, totalLinks, ColorReset)
+		if len(errItems) > 0 {
+			fmt.Printf("%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorYellow, ColorReset)
+			for idx, itemMessage := range errItems {
+				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
+			}
+		}
 	}
-	return articlesData
+
+	return products
 }
