@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils"
+	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
 	"strings"
 	"time"
 
@@ -17,22 +17,22 @@ const (
 func SmotrimMain() {
 	totalStartTime := time.Now()
 
-	_ = getLinksSmotrim()
+	_ = getLinksSmotrim() // Assuming we don't need the result for now
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения парсера Smotrim.ru: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("\n%s[SMOTRIM]%s[INFO] Общее время выполнения парсера Smotrim.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksSmotrim() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	fmt.Printf("%s[INFO] Начало парсинга ссылок с HTML-страницы %s...%s\n", ColorYellow, smotrimNewsHTMLURL, ColorReset)
+	// Removed: fmt.Printf("%s[INFO] Начало парсинга ссылок с HTML-страницы %s...%s\n", ColorYellow, smotrimNewsHTMLURL, ColorReset)
 
 	doc, err := GetHTML(smotrimNewsHTMLURL)
 	if err != nil {
-		fmt.Printf("%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorRed, smotrimNewsHTMLURL, err, ColorReset)
-		return getPageSmotrim(foundLinks)
+		fmt.Printf("%s[SMOTRIM]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, smotrimNewsHTMLURL, err, ColorReset)
+		return getPageSmotrim(foundLinks) // Proceed with empty links
 	}
 
 	actualLinkSelector := "li.list-item--article h3.list-item__title a.list-item__link"
@@ -55,9 +55,9 @@ func getLinksSmotrim() []Data {
 	})
 
 	if len(foundLinks) > 0 {
-		fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи с HTML-страницы.%s\n", ColorGreen, len(foundLinks), ColorReset)
+		// Removed: fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи с HTML-страницы.%s\n", ColorGreen, len(foundLinks), ColorReset)
 	} else {
-		fmt.Printf("%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorYellow, actualLinkSelector, smotrimNewsHTMLURL, ColorReset)
+		fmt.Printf("%s[SMOTRIM]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, actualLinkSelector, smotrimNewsHTMLURL, ColorReset)
 	}
 
 	return getPageSmotrim(foundLinks)
@@ -69,22 +69,22 @@ func getPageSmotrim(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
+		// Removed: fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
 	}
-	fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Smotrim.ru...%s\n", ColorYellow, totalLinks, ColorReset)
+	// Removed: fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Smotrim.ru...%s\n", ColorYellow, totalLinks, ColorReset)
 
-	for i, pageURL := range links {
+	for _, pageURL := range links {
 		var title, body string
-		var pageStatusMessage string
-		var statusMessageColor = ColorReset
+		//var pageStatusMessage string
+		//var statusMessageColor = ColorReset
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			statusMessageColor = ColorRed
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
+			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
+			//statusMessageColor = ColorRed
+			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), err.Error()))
 		} else {
 			title = strings.TrimSpace(doc.Find("h1.article-main-item__title").First().Text())
 
@@ -109,34 +109,34 @@ func getPageSmotrim(links []string) []Data {
 
 			if title != "" && body != "" {
 				products = append(products, Data{Title: title, Body: body})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				statusMessageColor = ColorGreen
+				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
+				//statusMessageColor = ColorGreen
 				parsedSuccessfully = true
 			} else {
-				statusMessageColor = ColorYellow
-				pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
+				//statusMessageColor = ColorYellow
+				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
 			}
 		}
 
-		if !parsedSuccessfully && err == nil {
+		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
 			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
 		}
 
-		ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
+		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
-		fmt.Printf("\n%s[INFO] Парсинг статей Smotrim.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
+		// Removed: fmt.Printf("\n%s[INFO] Парсинг статей Smotrim.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[SMOTRIM]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 {
-		fmt.Printf("\n%s[ERROR] Парсинг статей Smotrim.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 { // No products collected, but links were attempted
+		fmt.Printf("\n%s[SMOTRIM]%s[ERROR] Парсинг статей Smotrim.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorYellow, ColorReset)
+			fmt.Printf("%s[SMOTRIM]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}

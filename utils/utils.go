@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -13,11 +14,12 @@ import (
 
 // Data определяет структуру для хранения данных о продукте
 type Data struct {
+	Hash  string
 	Title string
 	Body  string
 	Href  string
 	Date  string
-	Time  string
+	Tags  []string
 }
 
 // Цветовые константы ANSI
@@ -26,38 +28,104 @@ const (
 	ColorGreen  = "\033[32m"
 	ColorRed    = "\033[31m"
 	ColorYellow = "\033[33m"
+	ColorBlue   = "\033[34m"
+
+	maxRetries = 3
+	baseDelay  = 1 * time.Second
+	maxDelay   = 10 * time.Second
 )
 
 func GetHTML(pageUrl string) (*goquery.Document, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: &http.Transport{ // Настроим транспорт для лучшего управления соединениями
+			MaxIdleConns:        100, // Больше неактивных соединений в пуле
+			MaxIdleConnsPerHost: 10,  // Больше неактивных соединений на хост (важно для gazeta.ru)
+			IdleConnTimeout:     90 * time.Second,
+		},
 	}
-	req, err := http.NewRequest("GET", pageUrl, nil)
-	if err != nil {
-		return nil, fmt.Errorf("создание HTTP GET-запроса для %s: %w", pageUrl, err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	var lastErr error
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("выполнение HTTP GET-запроса к %s: %w", pageUrl, err)
-	}
-	defer resp.Body.Close()
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(int64(baseDelay) * (1 << (attempt - 1))) // Экспоненциальная задержка: 1s, 2s, 4s...
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			// Добавляем джиттер (случайное небольшое отклонение), чтобы избежать "громоподобного стада"
+			jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
+			time.Sleep(delay + jitter)
+			fmt.Printf("%s[UTILS]%s[RETRY] Попытка #%d для %s после ошибки: %v%s\n", ColorBlue, ColorYellow, attempt+1, LimitString(pageUrl, 70), lastErr, ColorReset)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
-	}
+		req, err := http.NewRequest("GET", pageUrl, nil)
+		if err != nil {
+			lastErr = fmt.Errorf("создание HTTP GET-запроса для %s: %w", pageUrl, err)
+			// Эта ошибка обычно не требует повтора, но для консистентности можно оставить в цикле
+			continue
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+		// Можно добавить больше "человеческих" заголовков
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+		req.Header.Set("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+		req.Header.Set("Cache-Control", "max-age=0")
 
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("выполнение HTTP GET-запроса к %s: %w", pageUrl, err)
+			// Сетевые ошибки или таймауты клиента - определенно кандидаты на повтор
+			continue
+		}
+
+		// Важно закрывать тело в каждой итерации, если был получен ответ
+		bodyToClose := resp.Body
+		defer func() {
+			if bodyToClose != nil {
+				bodyToClose.Close()
+			}
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			// Читаем тело, чтобы сервер не держал соединение и для логгирования
+			_, _ = io.Copy(io.Discard, resp.Body) // Игнорируем ошибку чтения, т.к. статус уже не 200
+
+			// Некоторые статусы (например, 404 Not Found) не должны вызывать повторы
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || (resp.StatusCode >= 400 && resp.StatusCode < 500) {
+				return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) - не повторяем", pageUrl, resp.StatusCode, resp.Status)
+			}
+			lastErr = fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
+			continue
+		}
+
+		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		if err != nil {
+			// Вот здесь ваша ошибка "stream error... INTERNAL_ERROR" будет поймана
+			lastErr = fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
+			// Если ошибка содержит "INTERNAL_ERROR" или "stream error", это хороший кандидат на повтор
+			if strings.Contains(err.Error(), "INTERNAL_ERROR") || strings.Contains(err.Error(), "stream error") || strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection reset") {
+				// Можно не закрывать bodyToClose здесь явно, т.к. defer сработает.
+				// Но если бы мы хотели прочитать тело снова, его нужно было бы как-то "пересоздать" или не читать до конца.
+				// В данном случае goquery.NewDocumentFromReader уже его прочитал (или пытался).
+				bodyToClose = nil // Предотвращаем двойное закрытие, т.к. goquery мог уже закрыть
+				resp.Body.Close() // Закрываем "оригинальное" тело, если goquery не справился
+				continue
+			}
+			// Другие ошибки парсинга (например, невалидный HTML) повторять нет смысла
+			return nil, lastErr
+		}
+		return doc, nil // Успех
 	}
-	return doc, nil
+	return nil, fmt.Errorf("превышено количество попыток (%d) для %s: %w", maxRetries, pageUrl, lastErr)
 }
 
 func GetJSON(pageUrl string) ([]byte, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: &http.Transport{ // Настроим транспорт для лучшего управления соединениями
+			MaxIdleConns:        100, // Больше неактивных соединений в пуле
+			MaxIdleConnsPerHost: 10,  // Больше неактивных соединений на хост (важно для gazeta.ru)
+			IdleConnTimeout:     90 * time.Second,
+		},
 	}
 	req, err := http.NewRequest("GET", pageUrl, nil)
 	if err != nil {

@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils"
+	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
 	"strings"
 	"time"
 
@@ -17,23 +17,20 @@ const (
 func DumaTVMain() {
 	totalStartTime := time.Now()
 
-	fmt.Printf("%s[INFO] Запуск парсера DumaTV.ru (HTML)...%s\n", ColorYellow, ColorReset)
-	_ = getLinksDumaTV()
+	_ = getLinksDumaTV() // Assuming we don't need the result for now, like in BankiMain
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[INFO] Общее время выполнения парсера DumaTV.ru: %s%s\n", ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("\n%s[DUMATV]%s[INFO] Общее время выполнения парсера DumaTV.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksDumaTV() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	fmt.Printf("%s[INFO] Начало парсинга ссылок с HTML-страницы %s...%s\n", ColorYellow, dumatvNewsHTMLURL, ColorReset)
-
 	doc, err := GetHTML(dumatvNewsHTMLURL)
 	if err != nil {
-		fmt.Printf("%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorRed, dumatvNewsHTMLURL, err, ColorReset)
-		return getPageDumaTV(foundLinks)
+		fmt.Printf("%s[DUMATV]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, dumatvNewsHTMLURL, err, ColorReset)
+		return getPageDumaTV(foundLinks) // Proceed with empty links to allow getPageDumaTV to print its "no links" message if needed
 	}
 
 	linkSelector := "div.news-page-list__item a.news-page-card__title"
@@ -55,10 +52,8 @@ func getLinksDumaTV() []Data {
 		}
 	})
 
-	if len(foundLinks) > 0 {
-		fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи с HTML-страницы.%s\n", ColorGreen, len(foundLinks), ColorReset)
-	} else {
-		fmt.Printf("%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorYellow, linkSelector, dumatvNewsHTMLURL, ColorReset)
+	if len(foundLinks) <= 0 {
+		fmt.Printf("%s[DUMATV]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, dumatvNewsHTMLURL, ColorReset)
 	}
 
 	return getPageDumaTV(foundLinks)
@@ -70,21 +65,18 @@ func getPageDumaTV(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
+		// This message is fine as is, getLinksDumaTV already warns if no links were found from the source.
+		// If getLinksDumaTV itself failed and returned empty links, this acts as a secondary indicator.
+		// fmt.Printf("%s[DUMATV]%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorBlue, ColorYellow, ColorReset)
 		return products
 	}
-	fmt.Printf("\n%s[INFO] Начало парсинга %d статей с DumaTV.ru...%s\n", ColorYellow, totalLinks, ColorReset)
 
-	for i, pageURL := range links {
-		var title, body, pageDate, pageTime string
-		var pageStatusMessage string
-		var statusMessageColor = ColorReset
+	for _, pageURL := range links {
+		var title, body, pageDate string
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			statusMessageColor = ColorRed
 			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
 		} else {
 			title = strings.TrimSpace(doc.Find("h1.news-post-content__title").First().Text())
@@ -92,10 +84,10 @@ func getPageDumaTV(links []string) []Data {
 			rawDateTimeStr := strings.TrimSpace(doc.Find("div.news-post-top__date").First().Text())
 			parts := strings.Split(rawDateTimeStr, " / ")
 			if len(parts) == 2 {
-				pageDate = strings.TrimSpace(parts[0])
-				pageTime = strings.TrimSpace(parts[1])
+				pageDate = fmt.Sprint(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
 			} else if rawDateTimeStr != "" {
-				fmt.Printf("\n%s[WARNING] Неожиданный формат даты/времени: '%s' на %s%s\n", ColorYellow, rawDateTimeStr, pageURL, ColorReset)
+				// This is an in-loop warning specific to data quality. Keep its format consistent.
+				fmt.Printf("%s[DUMATV]%s[WARNING] Неожиданный формат даты/времени: '%s' на %s%s\n", ColorBlue, ColorYellow, rawDateTimeStr, pageURL, ColorReset)
 			}
 
 			var bodyBuilder strings.Builder
@@ -110,48 +102,40 @@ func getPageDumaTV(links []string) []Data {
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" && pageDate != "" && pageTime != "" {
+			if title != "" && body != "" && pageDate != "" { // Assuming Date is crucial for DumaTV
 				products = append(products, Data{
 					Title: title,
 					Body:  body,
 					Href:  pageURL,
 					Date:  pageDate,
-					Time:  pageTime,
 				})
-				pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				statusMessageColor = ColorGreen
 				parsedSuccessfully = true
-			} else {
-				statusMessageColor = ColorYellow
-				errMsg := fmt.Sprintf("T:%t|B:%t|D:%t|Ti:%t", title != "", body != "", pageDate != "", pageTime != "")
-				pageStatusMessage = fmt.Sprintf("Нет данных [%s]: %s", errMsg, LimitString(pageURL, 30))
 			}
 		}
 
-		if !parsedSuccessfully && err == nil {
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t,B:%t,D:%t,Ti:%t)", LimitString(pageURL, 50), title != "", body != "", pageDate != "", pageTime != ""))
+		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t, D:%t)", LimitString(pageURL, 60), title != "", body != "", pageDate != ""))
 		}
-
-		ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
-		fmt.Printf("\n%s[INFO] Парсинг статей DumaTV.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[DUMATV]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 {
-		fmt.Printf("\n%s[ERROR] Парсинг статей DumaTV.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 { // No products collected, but links were attempted
+		fmt.Printf("\n%s[DUMATV]%s[ERROR] Парсинг статей DumaTV.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorYellow, ColorReset)
+			fmt.Printf("%s[DUMATV]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
 	}
+	// If totalLinks == 0 initially, no summary message about processing is needed,
+	// as getLinksDumaTV would have already logged a warning or error.
 
 	return products
 }
