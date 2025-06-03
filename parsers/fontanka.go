@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
@@ -17,10 +17,10 @@ const (
 func FontankaMain() {
 	totalStartTime := time.Now()
 
-	_ = getLinksFontanka() // Assuming we don't need the result for now, like in BankiMain
+	_ = getLinksFontanka()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[FONTANKA]%s[INFO] Общее время выполнения парсера Fontanka.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[FONTANKA]%s[INFO] Парсер Fontanka.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksFontanka() []Data {
@@ -30,7 +30,7 @@ func getLinksFontanka() []Data {
 	doc, err := GetHTML(fontankaURLNews)
 	if err != nil {
 		fmt.Printf("%s[FONTANKA]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, fontankaURLNews, err, ColorReset)
-		return getPageFontanka(foundLinks) // Proceed with empty links
+		return getPageFontanka(foundLinks)
 	}
 
 	doc.Find("a.header_RL97A").Each(func(i int, s *goquery.Selection) {
@@ -63,28 +63,23 @@ func getPageFontanka(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		// Following Banki.go template, no message here.
-		// Warning/error about no links should come from getLinksFontanka.
 		return products
 	}
 
 	for _, pageURL := range links {
 		var title, body string
-		////var pageStatusMessage string
-		////var statusMessageColor = ColorReset
+		var tags []string
+		var parsDate time.Time
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			//statusMessageColor = ColorRed
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
+			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
 		} else {
 			title = strings.TrimSpace(doc.Find("h1[class*='title_BgFsr']").First().Text())
 
 			var bodyBuilder strings.Builder
 			doc.Find("div.uiArticleBlockText_5xJo1.text-style-body-1.c-text.block_0DdLJ").Find("p, a, li, blockquote").Each(func(_ int, s *goquery.Selection) {
-
 				partText := strings.TrimSpace(s.Text())
 				if partText != "" {
 					if bodyBuilder.Len() > 0 {
@@ -95,41 +90,71 @@ func getPageFontanka(links []string) []Data {
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" {
-				products = append(products, Data{Title: title, Body: body})
-				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				//statusMessageColor = ColorGreen
-				parsedSuccessfully = true
+			dateStr, exists := doc.Find("time.item_psvU3").Attr("datetime")
+			if exists {
+				parsedTime, err := time.Parse(time.RFC3339, dateStr)
+				if err != nil {
+					fmt.Printf("%s[FONTANKA]%s[WARNING] Ошибка парсинга даты из атрибута 'datetime': '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateStr, pageURL, err, ColorReset)
+				} else {
+					parsDate = parsedTime
+				}
 			} else {
-				//statusMessageColor = ColorYellow
-				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
+				fmt.Printf("%s[FONTANKA]%s[WARNING] Атрибут 'datetime' не найден у тега 'time.item_psvU3' на %s%s\n", ColorBlue, ColorYellow, pageURL, ColorReset)
+			}
+
+			doc.Find("div.scrollableBlock_oYLvg a.tag_S1lW8").Each(func(_ int, s *goquery.Selection) {
+				tagText := strings.TrimSpace(s.Text())
+				if tagText != "" {
+					tags = append(tags, tagText)
+				}
+			})
+
+			if title != "" && body != "" && !parsDate.IsZero() {
+				products = append(products, Data{
+					Href:  pageURL,
+					Title: title,
+					Body:  body,
+					Date:  parsDate,
+					Tags:  tags,
+				})
+				parsedSuccessfully = true
 			}
 		}
 
-		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
+		if !parsedSuccessfully && err == nil {
+			var reasons []string
+			if title == "" {
+				reasons = append(reasons, "T:false")
+			}
+			if body == "" {
+				reasons = append(reasons, "B:false")
+			}
+			if parsDate.IsZero() {
+				reasons = append(reasons, "D:false")
+			}
+			if len(tags) == 0 {
+				reasons = append(reasons, "Tags:false")
+			}
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
 		}
-
-		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
 		if len(errItems) > 0 {
-			fmt.Printf("%s[FONTANKA]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[FONTANKA]%s[WARNING] Не удалось обработать %d из %d страниц (или отсутствовали данные):%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
-				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset) // This formatting for individual items is consistent with Banki
+				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 { // No products collected, but links were attempted
-		fmt.Printf("\n%s[FONTANKA]%s[ERROR] Парсинг статей Fontanka.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 {
+		fmt.Printf("%s[FONTANKA]%s[ERROR] Парсинг статей Fontanka.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[FONTANKA]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {
-				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset) // This formatting for individual items is consistent with Banki
+				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
 	}
-	// If totalLinks == 0 initially, no summary message about processing is needed here.
 
 	return products
 }

@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
@@ -10,57 +10,44 @@ import (
 )
 
 const (
+	riaURL         = "https://ria.ru"
 	riaNewsPageURL = "https://ria.ru/lenta/"
-	// riaBaseURL = "https://ria.ru" // Not strictly needed if hrefs are absolute, but good practice if relative links were possible
 )
 
 func RiaMain() {
 	totalStartTime := time.Now()
 
-	// Removed: fmt.Printf("%s[INFO] Запуск парсера RIA.ru...%s\n", ColorYellow, ColorReset)
-	_ = getLinksRia() // Assuming we don't need the result for now
+	_ = getLinksRia()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[RIA]%s[INFO] Общее время выполнения парсера RIA.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[RIA]%s[INFO] Парсер RIA.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksRia() []Data {
 	var foundLinks []string
-	seenLinks := make(map[string]bool) // Added for efficient duplicate checking
-
-	// Removed: fmt.Printf("%s[INFO] Начало парсинга ссылок с %s...%s\n", ColorYellow, riaNewsPageURL, ColorReset)
+	seenLinks := make(map[string]bool)
+	linkSelector := "a.list-item__title.color-font-hover-only"
 
 	doc, err := GetHTML(riaNewsPageURL)
 	if err != nil {
 		fmt.Printf("%s[RIA]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, riaNewsPageURL, err, ColorReset)
-		return getPageRia(foundLinks) // Proceed with empty links
+		return getPageRia(foundLinks)
 	}
 
-	doc.Find("a.list-item__title.color-font-hover-only").Each(func(i int, s *goquery.Selection) {
+	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
-			// Assuming href is already an absolute URL starting with "https://ria.ru" as per original logic
 			if strings.HasPrefix(href, "https://ria.ru") {
 				if !seenLinks[href] {
 					seenLinks[href] = true
 					foundLinks = append(foundLinks, href)
 				}
 			}
-			// If href could be relative, we'd need logic like:
-			// fullHref := ""
-			// if strings.HasPrefix(href, "/") {
-			// 	fullHref = riaBaseURL + href
-			// } else if strings.HasPrefix(href, "https://ria.ru") {
-			//   fullHref = href
-			// }
-			// if fullHref != "" && !seenLinks[fullHref] { ... }
 		}
 	})
 
-	if len(foundLinks) > 0 {
-		// Removed: fmt.Printf("%s[INFO] Найдено %d ссылок на статьи.%s\n", ColorGreen, len(foundLinks), ColorReset)
-	} else {
-		fmt.Printf("%s[RIA]%s[WARNING] Не найдено ссылок с селектором 'a.list-item__title.color-font-hover-only' на странице %s.%s\n", ColorBlue, ColorYellow, riaNewsPageURL, ColorReset)
+	if len(foundLinks) == 0 {
+		fmt.Printf("%s[RIA]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, riaNewsPageURL, ColorReset)
 	}
 
 	return getPageRia(foundLinks)
@@ -72,35 +59,30 @@ func getPageRia(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		// Removed: fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
 	}
-	// Removed: fmt.Printf("\n%s[INFO] Начало парсинга %d статей с RIA.ru...%s\n", ColorYellow, totalLinks, ColorReset)
+
+	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
+	dateLayout := "15:04 02.01.2006"
 
 	for _, pageURL := range links {
 		var title, body string
-		//var pageStatusMessage string
-		//var statusMessageColor = ColorReset
+		var tags []string
+		var parsDate time.Time
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			//statusMessageColor = ColorRed
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
+			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
 		} else {
 			title = strings.TrimSpace(doc.Find(".article__title").First().Text())
 
-			var bodyBuilder strings.Builder // Use strings.Builder for efficient concatenation
-			// body = "" // Not strictly needed if bodyBuilder is used correctly and reset implicitly by being scoped here
-
+			var bodyBuilder strings.Builder
 			var targetNodes *goquery.Selection
 			articleBodyNode := doc.Find(".article__body")
 			if articleBodyNode.Length() > 0 {
 				targetNodes = articleBodyNode.Find(".article__text, .article__quote-text")
 			} else {
-				// Fallback if .article__body is not present, search within the whole document.
-				// This matches the original logic's intent.
 				targetNodes = doc.Find(".article__text, .article__quote-text")
 			}
 
@@ -115,34 +97,65 @@ func getPageRia(links []string) []Data {
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" {
-				products = append(products, Data{Title: title, Body: body})
-				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				//statusMessageColor = ColorGreen
-				parsedSuccessfully = true
+			dateTextRaw := doc.Find("div.article__info-date > a").First().Text()
+			dateToParse := strings.TrimSpace(dateTextRaw)
+
+			if dateToParse != "" {
+				var parseErr error
+				parsDate, parseErr = time.ParseInLocation(dateLayout, dateToParse, locationPlus3)
+				if parseErr != nil {
+					fmt.Printf("%s[RIA]%s[WARNING] Ошибка парсинга даты: '%s' (формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, dateLayout, pageURL, parseErr, ColorReset)
+				}
 			} else {
-				//statusMessageColor = ColorYellow
-				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
+				// fmt.Printf("%s[RIA]%s[DEBUG] Текст даты не найден на %s%s\n", ColorBlue, ColorCyan, pageURL, ColorReset)
+			}
+
+			doc.Find("div.article__tags a.article__tags-item").Each(func(_ int, s *goquery.Selection) {
+				tagText := strings.TrimSpace(s.Text())
+				if tagText != "" {
+					tags = append(tags, tagText)
+				}
+			})
+
+			if title != "" && body != "" && !parsDate.IsZero() && len(tags) > 0 {
+				products = append(products, Data{
+					Href:  pageURL,
+					Title: title,
+					Body:  body,
+					Date:  parsDate,
+					Tags:  tags,
+				})
+				parsedSuccessfully = true
 			}
 		}
 
-		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
+		if !parsedSuccessfully && err == nil {
+			var reasons []string
+			if title == "" {
+				reasons = append(reasons, "T:false")
+			}
+			if body == "" {
+				reasons = append(reasons, "B:false")
+			}
+			if parsDate.IsZero() {
+				reasons = append(reasons, "D:false")
+			}
+			if len(tags) == 0 {
+				reasons = append(reasons, "Tags:false")
+			}
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
 		}
-
-		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
-		// Removed: fmt.Printf("\n%s[INFO] Парсинг статей RIA.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[RIA]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[RIA]%s[WARNING] Не удалось обработать %d из %d страниц (или отсутствовали данные):%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 { // No products collected, but links were attempted
-		fmt.Printf("\n%s[RIA]%s[ERROR] Парсинг статей RIA.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 {
+		fmt.Printf("%s[RIA]%s[ERROR] Парсинг статей RIA.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[RIA]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {
@@ -150,6 +163,5 @@ func getPageRia(links []string) []Data {
 			}
 		}
 	}
-
 	return products
 }

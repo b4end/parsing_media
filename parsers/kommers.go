@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
@@ -14,30 +14,40 @@ const (
 	kommersURLNews = "https://www.kommersant.ru/lenta"
 )
 
+// LinkItem будет хранить URL статьи и предварительно собранные теги
+type LinkItem struct {
+	Href string
+	Tags []string
+}
+
 func KommersMain() {
 	totalStartTime := time.Now()
 
-	// Removed: fmt.Printf("%s[INFO] Запуск парсера Kommersant.ru...%s\n", ColorYellow, ColorReset)
-	_ = getLinksKommers() // Assuming we don't need the result for now
+	_ = getLinksKommers()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[KOMMERSANT]%s[INFO] Общее время выполнения парсера Kommersant.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[KOMMERSANT]%s[INFO] Парсер Kommersant.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksKommers() []Data {
-	var foundLinks []string
+	var foundLinkItems []LinkItem
 	seenLinks := make(map[string]bool)
-
-	// Removed: fmt.Printf("%s[INFO] Начало парсинга ссылок с %s...%s\n", ColorYellow, kommersURLNews, ColorReset)
 
 	doc, err := GetHTML(kommersURLNews)
 	if err != nil {
 		fmt.Printf("%s[KOMMERSANT]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, kommersURLNews, err, ColorReset)
-		return getPageKommers(foundLinks) // Proceed with empty links
+		return nil
 	}
 
-	doc.Find("a.uho__link.uho__link--overlay").Each(func(i int, s *goquery.Selection) {
-		href, exists := s.Attr("href")
+	articleSelector := "article.uho.rubric_lenta__item.js-article"
+	linkSelector := "h2.uho__name a.uho__link--overlay"
+	tagSelector := "ul.crumbs.tag_list li.tag_list__item a.tag_list__link"
+
+	doc.Find(articleSelector).Each(func(i int, articleSelection *goquery.Selection) {
+		var articleHref string
+		var articleTags []string
+
+		href, exists := articleSelection.Find(linkSelector).Attr("href")
 		if exists {
 			fullHref := ""
 			if strings.HasPrefix(href, "/") {
@@ -45,87 +55,137 @@ func getLinksKommers() []Data {
 			} else if strings.HasPrefix(href, kommersURL) {
 				fullHref = href
 			}
-
-			if fullHref != "" && !seenLinks[fullHref] {
-				seenLinks[fullHref] = true
-				foundLinks = append(foundLinks, fullHref)
+			if fullHref != "" {
+				articleHref = fullHref
 			}
+		}
+
+		if articleHref == "" {
+			return
+		}
+
+		articleSelection.Find(tagSelector).Each(func(_ int, tagLink *goquery.Selection) {
+			tagText := strings.TrimSpace(tagLink.Text())
+			if tagText != "" {
+				articleTags = append(articleTags, tagText)
+			}
+		})
+
+		if !seenLinks[articleHref] && len(articleTags) > 0 {
+			seenLinks[articleHref] = true
+			foundLinkItems = append(foundLinkItems, LinkItem{
+				Href: articleHref,
+				Tags: articleTags,
+			})
+		} else if !seenLinks[articleHref] && len(articleTags) == 0 {
 		}
 	})
 
-	if len(foundLinks) > 0 {
-		// Removed: fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи.%s\n", ColorGreen, len(foundLinks), ColorReset)
-	} else {
-		fmt.Printf("%s[KOMMERSANT]%s[WARNING] Не найдено ссылок с селектором 'a.uho__link.uho__link--overlay' на странице %s.%s\n", ColorBlue, ColorYellow, kommersURLNews, ColorReset)
+	if len(foundLinkItems) == 0 {
+		fmt.Printf("%s[KOMMERSANT]%s[WARNING] Не найдено ссылок с тегами на странице %s (селектор статьи: '%s').%s\n", ColorBlue, ColorYellow, kommersURLNews, articleSelector, ColorReset)
 	}
 
-	return getPageKommers(foundLinks)
+	return getPageKommers(foundLinkItems)
 }
 
-func getPageKommers(links []string) []Data {
+func getPageKommers(linkItems []LinkItem) []Data {
 	var products []Data
 	var errItems []string
-	totalLinks := len(links)
+	totalLinks := len(linkItems)
 
 	if totalLinks == 0 {
-		// Removed: fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
 	}
-	// Removed: fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Kommersant.ru...%s\n", ColorYellow, totalLinks, ColorReset)
 
-	for _, pageURL := range links {
+	tagsAreMandatoryForThisParser := true
+
+	for _, item := range linkItems {
+		pageURL := item.Href
+		preloadedTags := item.Tags
+
 		var title, body string
-		//var pageStatusMessage string
-		//var statusMessageColor = ColorReset
+		var parsDate time.Time
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			//statusMessageColor = ColorRed
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
+			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
 		} else {
-			title = strings.TrimSpace(doc.Find(".doc_header__name.js-search-mark").First().Text())
+			title = strings.TrimSpace(doc.Find("h1.doc_header__name.js-search-mark").First().Text())
+
 			var bodyBuilder strings.Builder
-			doc.Find(".doc__text").Each(func(_ int, s *goquery.Selection) {
-				currentTextPart := strings.TrimSpace(s.Text())
-				if currentTextPart != "" {
-					if bodyBuilder.Len() > 0 {
-						bodyBuilder.WriteString("\n\n")
-					}
-					bodyBuilder.WriteString(currentTextPart)
+			doc.Find("div.article_text_wrapper.js-search-mark p.doc__text").Not(".document_authors").Each(func(_ int, s *goquery.Selection) {
+				paragraphText := strings.TrimSpace(s.Text())
+				if strings.Contains(paragraphText, "Материал дополняется") ||
+					strings.HasPrefix(paragraphText, "Читайте также:") ||
+					strings.HasPrefix(paragraphText, "Фото:") ||
+					paragraphText == "" {
+					return
 				}
+				if bodyBuilder.Len() > 0 {
+					bodyBuilder.WriteString("\n\n")
+				}
+				bodyBuilder.WriteString(paragraphText)
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" {
-				products = append(products, Data{Title: title, Body: body})
-				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				//statusMessageColor = ColorGreen
-				parsedSuccessfully = true
+			dateSelector := `time.doc_header__publish_time`
+			dateStr, exists := doc.Find(dateSelector).Attr("datetime")
+			if exists {
+				parsedTime, err := time.Parse(time.RFC3339, dateStr)
+				if err != nil {
+					fmt.Printf("%s[KOMMERSANT]%s[WARNING] Ошибка парсинга даты: '%s' (селектор: '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateStr, dateSelector, pageURL, err, ColorReset)
+				} else {
+					parsDate = parsedTime
+				}
 			} else {
-				//statusMessageColor = ColorYellow
-				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
+				fmt.Printf("%s[KOMMERSANT]%s[INFO] Атрибут 'datetime' с датой не найден (селектор: '%s') на %s%s\n", ColorBlue, ColorYellow, dateSelector, pageURL, ColorReset)
+			}
+
+			allMandatoryFieldsPresent := title != "" && body != "" && !parsDate.IsZero()
+			if tagsAreMandatoryForThisParser {
+				allMandatoryFieldsPresent = allMandatoryFieldsPresent && len(preloadedTags) > 0
+			}
+
+			if allMandatoryFieldsPresent {
+				products = append(products, Data{
+					Href:  pageURL,
+					Title: title,
+					Body:  body,
+					Date:  parsDate,
+					Tags:  preloadedTags,
+				})
+				parsedSuccessfully = true
 			}
 		}
 
-		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
+		if !parsedSuccessfully && err == nil {
+			var reasons []string
+			if title == "" {
+				reasons = append(reasons, "T:false")
+			}
+			if body == "" {
+				reasons = append(reasons, "B:false")
+			}
+			if parsDate.IsZero() {
+				reasons = append(reasons, "D:false")
+			}
+			if tagsAreMandatoryForThisParser && len(preloadedTags) == 0 {
+				reasons = append(reasons, "Tags:false(mandatory_on_feed)")
+			}
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
 		}
-
-		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
-		// Removed: fmt.Printf("\n%s[INFO] Парсинг статей Kommersant.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[KOMMERSANT]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[KOMMERSANT]%s[WARNING] Не удалось обработать %d из %d страниц (или отсутствовали данные):%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 { // No products collected, but links were attempted
-		fmt.Printf("\n%s[KOMMERSANT]%s[ERROR] Парсинг статей Kommersant.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 {
+		fmt.Printf("%s[KOMMERSANT]%s[ERROR] Парсинг статей Kommersant.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[KOMMERSANT]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {
@@ -133,6 +193,5 @@ func getPageKommers(links []string) []Data {
 			}
 		}
 	}
-
 	return products
 }

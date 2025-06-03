@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
@@ -17,27 +17,25 @@ const (
 func SmotrimMain() {
 	totalStartTime := time.Now()
 
-	_ = getLinksSmotrim() // Assuming we don't need the result for now
+	_ = getLinksSmotrim()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[SMOTRIM]%s[INFO] Общее время выполнения парсера Smotrim.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[SMOTRIM]%s[INFO] Парсер Smotrim.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksSmotrim() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	// Removed: fmt.Printf("%s[INFO] Начало парсинга ссылок с HTML-страницы %s...%s\n", ColorYellow, smotrimNewsHTMLURL, ColorReset)
-
 	doc, err := GetHTML(smotrimNewsHTMLURL)
 	if err != nil {
 		fmt.Printf("%s[SMOTRIM]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, smotrimNewsHTMLURL, err, ColorReset)
-		return getPageSmotrim(foundLinks) // Proceed with empty links
+		return getPageSmotrim(foundLinks)
 	}
 
-	actualLinkSelector := "li.list-item--article h3.list-item__title a.list-item__link"
+	linkSelector := "li.list-item--article h3.list-item__title a.list-item__link"
 
-	doc.Find(actualLinkSelector).Each(func(i int, s *goquery.Selection) {
+	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
 			fullHref := ""
@@ -54,10 +52,8 @@ func getLinksSmotrim() []Data {
 		}
 	})
 
-	if len(foundLinks) > 0 {
-		// Removed: fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи с HTML-страницы.%s\n", ColorGreen, len(foundLinks), ColorReset)
-	} else {
-		fmt.Printf("%s[SMOTRIM]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, actualLinkSelector, smotrimNewsHTMLURL, ColorReset)
+	if len(foundLinks) == 0 {
+		fmt.Printf("%s[SMOTRIM]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, smotrimNewsHTMLURL, ColorReset)
 	}
 
 	return getPageSmotrim(foundLinks)
@@ -69,22 +65,21 @@ func getPageSmotrim(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		// Removed: fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
 	}
-	// Removed: fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Smotrim.ru...%s\n", ColorYellow, totalLinks, ColorReset)
+
+	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
+	dateLayout := "2 01 2006, 15:04"
 
 	for _, pageURL := range links {
 		var title, body string
-		//var pageStatusMessage string
-		//var statusMessageColor = ColorReset
+		var tags []string
+		var parsDate time.Time
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			//statusMessageColor = ColorRed
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), err.Error()))
+			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
 		} else {
 			title = strings.TrimSpace(doc.Find("h1.article-main-item__title").First().Text())
 
@@ -107,34 +102,90 @@ func getPageSmotrim(links []string) []Data {
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" {
-				products = append(products, Data{Title: title, Body: body})
-				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				//statusMessageColor = ColorGreen
+			dateTextRaw := doc.Find("span.r_offset_0").First().Text()
+			if dateTextRaw == "" {
+				dateTextRaw = doc.Find("div.article-main-item__date").First().Text()
+			}
+			if dateTextRaw == "" {
+				dateTextRaw = doc.Find(".article__date").First().Text()
+			}
+
+			dateToParse := strings.TrimSpace(dateTextRaw)
+			processedDateStr := dateToParse
+
+			if dateToParse != "" {
+				foundMonth := false
+				lowerDateToParse := strings.ToLower(dateToParse)
+				tempProcessedStr := dateToParse
+
+				for rusMonth, numMonth := range RussianMonths {
+					lowerRusMonth := strings.ToLower(rusMonth)
+					if strings.Contains(lowerDateToParse, lowerRusMonth) {
+						startIndex := strings.Index(lowerDateToParse, lowerRusMonth)
+						if startIndex != -1 {
+							tempProcessedStr = dateToParse[:startIndex] + numMonth + dateToParse[startIndex+len(rusMonth):]
+							foundMonth = true
+							break
+						}
+					}
+				}
+				if foundMonth {
+					processedDateStr = tempProcessedStr
+				}
+
+				var parseErr error
+				parsDate, parseErr = time.ParseInLocation(dateLayout, processedDateStr, locationPlus3)
+				if parseErr != nil {
+					fmt.Printf("%s[SMOTRIM]%s[WARNING] Ошибка парсинга даты: '%s' (попытка с '%s', формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, processedDateStr, dateLayout, pageURL, parseErr, ColorReset)
+				}
+			}
+
+			doc.Find("div.tags-list__content ul.tags-list__list li.tags-list__item a.tags-list__link").Each(func(_ int, s *goquery.Selection) {
+				tagText := strings.TrimSpace(s.Text())
+				if tagText != "" {
+					tags = append(tags, tagText)
+				}
+			})
+
+			if title != "" && body != "" && !parsDate.IsZero() && len(tags) > 0 {
+				products = append(products, Data{
+					Href:  pageURL,
+					Title: title,
+					Body:  body,
+					Date:  parsDate,
+					Tags:  tags,
+				})
 				parsedSuccessfully = true
-			} else {
-				//statusMessageColor = ColorYellow
-				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
 			}
 		}
 
-		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
+		if !parsedSuccessfully && err == nil {
+			var reasons []string
+			if title == "" {
+				reasons = append(reasons, "T:false")
+			}
+			if body == "" {
+				reasons = append(reasons, "B:false")
+			}
+			if parsDate.IsZero() {
+				reasons = append(reasons, "D:false")
+			}
+			if len(tags) == 0 {
+				reasons = append(reasons, "Tags:false")
+			}
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
 		}
-
-		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
-		// Removed: fmt.Printf("\n%s[INFO] Парсинг статей Smotrim.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[SMOTRIM]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[SMOTRIM]%s[WARNING] Не удалось обработать %d из %d страниц (или отсутствовали данные):%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 { // No products collected, but links were attempted
-		fmt.Printf("\n%s[SMOTRIM]%s[ERROR] Парсинг статей Smotrim.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 {
+		fmt.Printf("%s[SMOTRIM]%s[ERROR] Парсинг статей Smotrim.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[SMOTRIM]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {

@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString, ProgressBar are defined here
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
@@ -17,26 +17,24 @@ const (
 func VestiMain() {
 	totalStartTime := time.Now()
 
-	// Removed: fmt.Printf("%s[INFO] Запуск парсера Vesti.ru...%s\n", ColorYellow, ColorReset)
-	_ = getLinksVesti() // Assuming we don't need the result for now
+	_ = getLinksVesti()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[VESTI]%s[INFO] Общее время выполнения парсера Vesti.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[VESTI]%s[INFO] Парсер Vesti.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksVesti() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
-
-	// Removed: fmt.Printf("%s[INFO] Начало парсинга ссылок с %s...%s\n", ColorYellow, vestiURLNews, ColorReset)
+	linkSelector := "a.list__pic-wrapper"
 
 	doc, err := GetHTML(vestiURLNews)
 	if err != nil {
 		fmt.Printf("%s[VESTI]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, vestiURLNews, err, ColorReset)
-		return getPageVesti(foundLinks) // Proceed with empty links
+		return getPageVesti(foundLinks)
 	}
 
-	doc.Find("a.list__pic-wrapper").Each(func(i int, s *goquery.Selection) {
+	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
 			fullHref := ""
@@ -53,10 +51,8 @@ func getLinksVesti() []Data {
 		}
 	})
 
-	if len(foundLinks) > 0 {
-		// Removed: fmt.Printf("%s[INFO] Найдено %d уникальных ссылок на статьи (с HTML страницы).%s\n", ColorGreen, len(foundLinks), ColorReset)
-	} else {
-		fmt.Printf("%s[VESTI]%s[WARNING] Не найдено ссылок с селектором 'a.list__pic-wrapper' на странице %s.%s\n", ColorBlue, ColorYellow, vestiURLNews, ColorReset)
+	if len(foundLinks) == 0 {
+		fmt.Printf("%s[VESTI]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, vestiURLNews, ColorReset)
 	}
 
 	return getPageVesti(foundLinks)
@@ -68,67 +64,141 @@ func getPageVesti(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		// Removed: fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
 	}
-	// Removed: fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Vesti.ru...%s\n", ColorYellow, totalLinks, ColorReset)
+
+	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
+	dateLayoutFromAttr := "2006-01-02 15:04:05"
+
+	dateLayoutFromText := "02 01 2006 15:04"
 
 	for _, pageURL := range links {
 		var title, body string
-		//var pageStatusMessage string        // Kept for ProgressBar
-		//var statusMessageColor = ColorReset // Kept for ProgressBar
+		var tags []string
+		var parsDate time.Time
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50)) // Kept for ProgressBar
-			//statusMessageColor = ColorRed                                                   // Kept for ProgressBar
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
+			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
 		} else {
 			title = strings.TrimSpace(doc.Find("h1.article__title").First().Text())
+
 			var bodyBuilder strings.Builder
-			doc.Find(".js-mediator-article").Find("p, blockquote").Each(func(_ int, s *goquery.Selection) {
+			doc.Find("div.js-mediator-article").Find("p, blockquote").Each(func(_ int, s *goquery.Selection) {
 				partText := strings.TrimSpace(s.Text())
 				if partText != "" {
 					if bodyBuilder.Len() > 0 {
-						bodyBuilder.WriteString("\n\n") // Разделяем абзацы/цитаты
+						bodyBuilder.WriteString("\n\n")
 					}
 					bodyBuilder.WriteString(partText)
 				}
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" {
-				products = append(products, Data{Title: title, Body: body})
-				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60)) // Kept for ProgressBar
-				//statusMessageColor = ColorGreen                                      // Kept for ProgressBar
+			dateStringAttr, existsAttr := doc.Find("article.article[data-datepub]").Attr("data-datepub")
+			if existsAttr && dateStringAttr != "" {
+				var parseErr error
+				parsDate, parseErr = time.ParseInLocation(dateLayoutFromAttr, dateStringAttr, locationPlus3)
+				if parseErr != nil {
+					fmt.Printf("%s[VESTI]%s[WARNING] Ошибка парсинга даты из data-datepub: '%s' (формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateStringAttr, dateLayoutFromAttr, pageURL, parseErr, ColorReset)
+				}
+			}
+
+			if parsDate.IsZero() {
+				dateTextPart := strings.TrimSpace(doc.Find("div.article__date").Contents().Not("span").First().Text())
+				timeTextPart := strings.TrimSpace(doc.Find("div.article__date span.article__time").First().Text())
+
+				if dateTextPart != "" && timeTextPart != "" {
+					fullDateText := dateTextPart + " " + timeTextPart
+					processedDateStr := fullDateText
+					foundMonth := false
+					lowerDateToParse := strings.ToLower(fullDateText)
+					tempProcessedStr := fullDateText
+
+					for rusMonth, numMonth := range RussianMonths {
+						lowerRusMonth := strings.ToLower(rusMonth)
+						if strings.Contains(lowerDateToParse, lowerRusMonth) {
+							startIndex := strings.Index(lowerDateToParse, lowerRusMonth)
+							if startIndex != -1 {
+								tempProcessedStr = fullDateText[:startIndex] + numMonth + fullDateText[startIndex+len(rusMonth):]
+								foundMonth = true
+								break
+							}
+						}
+					}
+					if foundMonth {
+						processedDateStr = tempProcessedStr
+					}
+
+					var parseErr error
+					parsDate, parseErr = time.ParseInLocation(dateLayoutFromText, processedDateStr, locationPlus3)
+					if parseErr != nil {
+						fmt.Printf("%s[VESTI]%s[WARNING] Ошибка парсинга даты из текста: '%s' (попытка с '%s', формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, fullDateText, processedDateStr, dateLayoutFromText, pageURL, parseErr, ColorReset)
+					}
+				}
+			}
+
+			categoryTag := strings.TrimSpace(doc.Find("div.article__date div.list__subtitle a.list__src").First().Text())
+			if categoryTag != "" {
+				tags = append(tags, categoryTag)
+			}
+
+			doc.Find("div.tags a.tags__item").Each(func(_ int, s *goquery.Selection) {
+				tagText := strings.TrimSpace(s.Text())
+				if tagText != "" {
+					isDuplicate := false
+					for _, existingTag := range tags {
+						if existingTag == tagText {
+							isDuplicate = true
+							break
+						}
+					}
+					if !isDuplicate {
+						tags = append(tags, tagText)
+					}
+				}
+			})
+
+			if title != "" && body != "" && !parsDate.IsZero() && len(tags) > 0 {
+				products = append(products, Data{
+					Href:  pageURL,
+					Title: title,
+					Body:  body,
+					Date:  parsDate,
+					Tags:  tags,
+				})
 				parsedSuccessfully = true
-			} else {
-				//statusMessageColor = ColorYellow                                                                                  // Kept for ProgressBar
-				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40)) // Kept for ProgressBar
 			}
 		}
 
-		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
-			// If adding to errItems, pageStatusMessage might already be set if data was empty.
-			// If it was a GET error, it's already in errItems.
-			// If it was empty data and no GET error, pageStatusMessage for ProgressBar would be "Нет данных..."
+		if !parsedSuccessfully && err == nil {
+			var reasons []string
+			if title == "" {
+				reasons = append(reasons, "T:false")
+			}
+			if body == "" {
+				reasons = append(reasons, "B:false")
+			}
+			if parsDate.IsZero() {
+				reasons = append(reasons, "D:false")
+			}
+			if len(tags) == 0 {
+				reasons = append(reasons, "Tags:false")
+			}
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
 		}
-
-		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks) // Kept as per instruction to preserve comments/lines
 	}
 
 	if len(products) > 0 {
-		// Removed: fmt.Printf("\n%s[INFO] Парсинг статей Vesti.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[VESTI]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[VESTI]%s[WARNING] Не удалось обработать %d из %d страниц (или отсутствовали данные):%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 { // No products collected, but links were attempted
-		fmt.Printf("\n%s[VESTI]%s[ERROR] Парсинг статей Vesti.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 {
+		fmt.Printf("%s[VESTI]%s[ERROR] Парсинг статей Vesti.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[VESTI]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {

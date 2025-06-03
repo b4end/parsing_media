@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"parsing_media/parsers"
 	. "parsing_media/utils"
-	"sync" // Пакет для синхронизации
+	"sync"
 )
 
 func main() {
@@ -33,22 +33,20 @@ func main() {
 			{"DumaTV", parsers.DumaTVMain},
 		}
 
-		fmt.Printf("%s[INFO] Запускаем все парсеры%s\n", ColorBlue, ColorReset)
+		fmt.Printf("\n%s[INFO] Запуск всех парсеров%s\n\n", ColorBlue, ColorReset)
 
 		for _, job := range parserJobs {
 			wg.Add(1)
 
 			go func(parserName string, parserFunc func()) {
 				defer wg.Done()
-
 				parserFunc()
-				fmt.Printf("%s[INFO] Парсер %s завершил работу.%s\n", ColorBlue, parserName, ColorReset)
 			}(job.name, job.fn)
 		}
 
 		wg.Wait()
 
-		fmt.Printf("%s[INFO] Все парсеры завершили свою работу.%s\n", ColorBlue, ColorReset)
+		fmt.Printf("\n%s[INFO] Все парсеры завершили свою работу.%s\n", ColorBlue, ColorReset)
 
 	case "1":
 		parsers.RiaMain()

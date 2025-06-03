@@ -15,14 +15,13 @@ import (
 // Data определяет структуру для хранения данных о продукте
 type Data struct {
 	Hash  string
+	Href  string
 	Title string
 	Body  string
-	Href  string
-	Date  string
+	Date  time.Time
 	Tags  []string
 }
 
-// Цветовые константы ANSI
 const (
 	ColorReset  = "\033[0m"
 	ColorGreen  = "\033[32m"
@@ -34,6 +33,22 @@ const (
 	baseDelay  = 1 * time.Second
 	maxDelay   = 10 * time.Second
 )
+
+// Карта для перевода русских названий месяцев (в родительном падеже, как в примере) в числовой формат
+var RussianMonths = map[string]string{
+	"января":   "01",
+	"февраля":  "02",
+	"марта":    "03",
+	"апреля":   "04",
+	"мая":      "05",
+	"июня":     "06",
+	"июля":     "07",
+	"августа":  "08",
+	"сентября": "09",
+	"октября":  "10",
+	"ноября":   "11",
+	"декабря":  "12",
+}
 
 func GetHTML(pageUrl string) (*goquery.Document, error) {
 	client := &http.Client{
@@ -91,7 +106,10 @@ func GetHTML(pageUrl string) (*goquery.Document, error) {
 
 			// Некоторые статусы (например, 404 Not Found) не должны вызывать повторы
 			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || (resp.StatusCode >= 400 && resp.StatusCode < 500) {
-				return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) - не повторяем", pageUrl, resp.StatusCode, resp.Status)
+				if attempt == 3 {
+					return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) - не повторяем", pageUrl, resp.StatusCode, resp.Status)
+
+				}
 			}
 			lastErr = fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
 			continue

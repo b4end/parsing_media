@@ -2,7 +2,7 @@ package parsers
 
 import (
 	"fmt"
-	. "parsing_media/utils" // Assuming Data, ColorBlue, ColorYellow, ColorRed, ColorReset, GetHTML, FormatDuration, LimitString are defined here
+	. "parsing_media/utils"
 	"strings"
 	"time"
 
@@ -17,36 +17,32 @@ const (
 func LentaMain() {
 	totalStartTime := time.Now()
 
-	// Removed: fmt.Printf("%s[INFO] Запуск парсера Lenta.ru...%s\n", ColorYellow, ColorReset)
-	_ = getLinksLenta() // Assuming we don't need the result for now
+	_ = getLinksLenta()
 
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("\n%s[LENTA]%s[INFO] Общее время выполнения парсера Lenta.ru: %s%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[LENTA]%s[INFO] Парсер Lenta.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksLenta() []Data {
 	var foundLinks []string
-	seenLinks := make(map[string]bool) // Added for efficient duplicate checking, as per Banki template
-
-	// Removed: fmt.Printf("%s[INFO] Начало парсинга ссылок с %s...%s\n", ColorYellow, lentaURLPage, ColorReset)
+	seenLinks := make(map[string]bool)
 
 	doc, err := GetHTML(lentaURLPage)
 	if err != nil {
 		fmt.Printf("%s[LENTA]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, lentaURLPage, err, ColorReset)
-		return getPageLenta(foundLinks) // Proceed with empty links
+		return getPageLenta(foundLinks)
 	}
 
-	doc.Find("a.card-full-news._parts-news").Each(func(i int, s *goquery.Selection) {
+	linkSelector := "a.card-full-news._parts-news"
+	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
 			fullHref := ""
-			if !strings.HasPrefix(href, "https://") && strings.HasPrefix(href, "/") {
+			if strings.HasPrefix(href, "/") {
 				fullHref = lentaURL + href
+			} else if strings.HasPrefix(href, lentaURL) {
+				fullHref = href
 			}
-			// Note: Original code only added links starting with "/".
-			// If other types of links (e.g., absolute lenta.ru links) were intended to be captured,
-			// this logic might need adjustment similar to other parsers.
-			// For now, strictly adhering to the original filtering.
 
 			if fullHref != "" && !seenLinks[fullHref] {
 				seenLinks[fullHref] = true
@@ -55,10 +51,8 @@ func getLinksLenta() []Data {
 		}
 	})
 
-	if len(foundLinks) > 0 {
-		// Removed: fmt.Printf("%s[INFO] Найдено %d ссылок на статьи.%s\n", ColorGreen, len(foundLinks), ColorReset)
-	} else {
-		fmt.Printf("%s[LENTA]%s[WARNING] Не найдено ссылок с селектором 'a.card-full-news._parts-news' на странице %s.%s\n", ColorBlue, ColorYellow, lentaURLPage, ColorReset)
+	if len(foundLinks) == 0 {
+		fmt.Printf("%s[LENTA]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, lentaURLPage, ColorReset)
 	}
 
 	return getPageLenta(foundLinks)
@@ -70,68 +64,114 @@ func getPageLenta(links []string) []Data {
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		// Removed: fmt.Printf("%s[INFO] Нет ссылок для парсинга статей.%s\n", ColorYellow, ColorReset)
 		return products
 	}
-	// Removed: fmt.Printf("\n%s[INFO] Начало парсинга %d статей с Lenta.ru...%s\n", ColorYellow, totalLinks, ColorReset)
+
+	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
+	dateLayout := "15:04, 2 01 2006"
 
 	for _, pageURL := range links {
 		var title, body string
-		//var pageStatusMessage string
-		//var statusMessageColor = ColorReset
+		var tags []string
+		var parsDate time.Time
 		parsedSuccessfully := false
 
 		doc, err := GetHTML(pageURL)
 		if err != nil {
-			//pageStatusMessage = fmt.Sprintf("Ошибка GET: %s", LimitString(err.Error(), 50))
-			//statusMessageColor = ColorRed
-			errItems = append(errItems, fmt.Sprintf("%s (ошибка GET: %s)", LimitString(pageURL, 60), LimitString(err.Error(), 50)))
+			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
 		} else {
 			title = strings.TrimSpace(doc.Find(".topic-body__title").First().Text())
 
-			// Reset body for each page to avoid concatenating from previous pages
-			body = ""                       // Important: ensure body is reset for each article
-			var bodyBuilder strings.Builder // Use strings.Builder for efficiency
-
-			doc.Find(".topic-body__content-text").Each(func(i int, s *goquery.Selection) {
-				currentTextPart := strings.TrimSpace(s.Text())
-				if currentTextPart != "" {
-					if bodyBuilder.Len() > 0 { // Check builder length instead of body string
+			var bodyBuilder strings.Builder
+			doc.Find(".topic-body__content > p").Each(func(i int, s *goquery.Selection) {
+				paragraphText := strings.TrimSpace(s.Text())
+				if paragraphText != "" {
+					if bodyBuilder.Len() > 0 {
 						bodyBuilder.WriteString("\n\n")
 					}
-					bodyBuilder.WriteString(currentTextPart)
+					bodyBuilder.WriteString(paragraphText)
 				}
 			})
 			body = bodyBuilder.String()
 
-			if title != "" && body != "" {
-				products = append(products, Data{Title: title, Body: body})
-				//pageStatusMessage = fmt.Sprintf("Успех: %s", LimitString(title, 60))
-				//statusMessageColor = ColorGreen
+			dateTextRaw := doc.Find("a.topic-header__item.topic-header__time").First().Text()
+			dateToParse := strings.TrimSpace(dateTextRaw)
+			processedDateStr := dateToParse
+
+			if dateToParse != "" {
+				foundMonth := false
+				lowerDateToParse := strings.ToLower(dateToParse)
+				tempProcessedStr := dateToParse
+
+				for rusMonth, numMonth := range RussianMonths {
+					lowerRusMonth := strings.ToLower(rusMonth)
+					if strings.Contains(lowerDateToParse, lowerRusMonth) {
+						startIndex := strings.Index(lowerDateToParse, lowerRusMonth)
+						if startIndex != -1 {
+							tempProcessedStr = dateToParse[:startIndex] + numMonth + dateToParse[startIndex+len(rusMonth):]
+							foundMonth = true
+							break
+						}
+					}
+				}
+				if foundMonth {
+					processedDateStr = tempProcessedStr
+				}
+				// fmt.Printf("DEBUG: dateToParse: '%s', processedDateStr: '%s'\n", dateToParse, processedDateStr) // Для отладки
+
+				var parseErr error
+				parsDate, parseErr = time.ParseInLocation(dateLayout, processedDateStr, locationPlus3)
+				if parseErr != nil {
+					fmt.Printf("%s[LENTA]%s[WARNING] Ошибка парсинга даты: '%s' (попытка с '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, processedDateStr, pageURL, parseErr, ColorReset)
+				}
+			}
+
+			doc.Find("a.topic-header__item.topic-header__rubric").Each(func(_ int, s *goquery.Selection) {
+				tagText := strings.TrimSpace(s.Text())
+				if tagText != "" {
+					tags = append(tags, tagText)
+				}
+			})
+
+			if title != "" && body != "" && !parsDate.IsZero() && len(tags) > 0 {
+				products = append(products, Data{
+					Href:  pageURL,
+					Title: title,
+					Body:  body,
+					Date:  parsDate,
+					Tags:  tags,
+				})
 				parsedSuccessfully = true
-			} else {
-				//statusMessageColor = ColorYellow
-				//pageStatusMessage = fmt.Sprintf("Нет данных (T:%t, B:%t): %s", title != "", body != "", LimitString(pageURL, 40))
 			}
 		}
 
-		if !parsedSuccessfully && err == nil { // Only add to errItems if GetHTML was successful but data extraction failed
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: T:%t, B:%t)", LimitString(pageURL, 60), title != "", body != ""))
+		if !parsedSuccessfully && err == nil {
+			var reasons []string
+			if title == "" {
+				reasons = append(reasons, "T:false")
+			}
+			if body == "" {
+				reasons = append(reasons, "B:false")
+			}
+			if parsDate.IsZero() {
+				reasons = append(reasons, "D:false")
+			}
+			if len(tags) == 0 {
+				reasons = append(reasons, "Tags:false")
+			}
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
 		}
-
-		//ProgressBar(title, body, pageStatusMessage, statusMessageColor, i, totalLinks)
 	}
 
 	if len(products) > 0 {
-		// Removed: fmt.Printf("\n%s[INFO] Парсинг статей Lenta.ru завершен. Собрано %d статей.%s\n", ColorGreen, len(products), ColorReset)
 		if len(errItems) > 0 {
-			fmt.Printf("%s[LENTA]%s[WARNING] Не удалось обработать %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
+			fmt.Printf("%s[LENTA]%s[WARNING] Не удалось обработать %d из %d страниц (или отсутствовали данные):%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-	} else if totalLinks > 0 { // No products collected, but links were attempted
-		fmt.Printf("\n%s[LENTA]%s[ERROR] Парсинг статей Lenta.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
+	} else if totalLinks > 0 {
+		fmt.Printf("%s[LENTA]%s[ERROR] Парсинг статей Lenta.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[LENTA]%s[INFO] Список страниц с ошибками или без данных:%s\n", ColorBlue, ColorYellow, ColorReset)
 			for idx, itemMessage := range errItems {
