@@ -311,3 +311,92 @@ func ProgressBar(title string, body string, pageStatusMessage string, statusMess
 
 	fmt.Printf("\r[%s] %3d%% %s%s%s", bar, percent, statusMessageColor, fullStatusText, ColorReset)
 }
+
+// GetHTML теперь принимает *http.Client
+func GetHTMLForClient(client *http.Client, pageUrl string) (*goquery.Document, error) {
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(int64(baseDelay) * (1 << (attempt - 1)))
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
+			time.Sleep(delay + jitter)
+			fmt.Printf("%s[UTILS]%s[RETRY] Попытка #%d для %s после ошибки: %v%s\n", ColorBlue, ColorYellow, attempt+1, LimitString(pageUrl, 70), lastErr, ColorReset)
+		}
+
+		req, err := http.NewRequest("GET", pageUrl, nil)
+		if err != nil {
+			lastErr = fmt.Errorf("создание HTTP GET-запроса для %s: %w", pageUrl, err)
+			continue
+		}
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+		req.Header.Set("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+		req.Header.Set("Cache-Control", "max-age=0")
+
+		resp, err := client.Do(req) // Используем переданный client
+		if err != nil {
+			lastErr = fmt.Errorf("выполнение HTTP GET-запроса к %s: %w", pageUrl, err)
+			continue
+		}
+
+		bodyToClose := resp.Body
+		defer func() {
+			if bodyToClose != nil {
+				bodyToClose.Close()
+			}
+		}()
+
+		if resp.StatusCode != http.StatusOK {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden || (resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests) { // Не повторяем 404, 403 и другие клиентские ошибки, кроме 429
+				// Убрал if attempt == 3, т.к. для таких ошибок не должно быть повторов вообще
+				return nil, fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) - не повторяем", pageUrl, resp.StatusCode, resp.Status)
+			}
+			lastErr = fmt.Errorf("HTTP-запрос к %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
+			continue
+		}
+
+		doc, err := goquery.NewDocumentFromReader(resp.Body)
+		if err != nil {
+			lastErr = fmt.Errorf("ошибка парсинга HTML со страницы %s: %w", pageUrl, err)
+			if strings.Contains(err.Error(), "INTERNAL_ERROR") || strings.Contains(err.Error(), "stream error") || strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection reset") {
+				bodyToClose = nil
+				resp.Body.Close()
+				continue
+			}
+			return nil, lastErr
+		}
+		return doc, nil
+	}
+	return nil, fmt.Errorf("превышено количество попыток (%d) для %s: %w", maxRetries, pageUrl, lastErr)
+}
+
+// GetJSON теперь принимает *http.Client
+func GetJSONForClient(client *http.Client, pageUrl string) ([]byte, error) {
+	req, err := http.NewRequest("GET", pageUrl, nil)
+	if err != nil {
+		return nil, fmt.Errorf("создание HTTP GET-запроса для JSON API %s: %w", pageUrl, err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req) // Используем переданный client
+	if err != nil {
+		return nil, fmt.Errorf("выполнение HTTP GET-запроса к JSON API %s: %w", pageUrl, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP-запрос к JSON API %s вернул статус %d (%s) вместо 200 (OK)", pageUrl, resp.StatusCode, resp.Status)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения тела JSON ответа с %s: %w", pageUrl, err)
+	}
+	return bodyBytes, nil
+}

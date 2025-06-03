@@ -2,8 +2,10 @@ package parsers
 
 import (
 	"fmt"
+	"net/http"
 	. "parsing_media/utils"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -12,13 +14,12 @@ import (
 const (
 	dumatvURL         = "https://dumatv.ru"
 	dumatvNewsHTMLURL = "https://dumatv.ru/categories/news"
+	numWorkersDumaTV  = 10
 )
 
 func DumaTVMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksDumaTV()
-
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[DUMATV]%s[INFO] Парсер DumaTV.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
@@ -26,7 +27,17 @@ func DumaTVMain() {
 func getLinksDumaTV() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
-	doc, err := GetHTML(dumatvNewsHTMLURL)
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	doc, err := GetHTMLForClient(client, dumatvNewsHTMLURL)
 	if err != nil {
 		fmt.Printf("%s[DUMATV]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, dumatvNewsHTMLURL, err, ColorReset)
 		return getPageDumaTV(foundLinks)
@@ -58,6 +69,14 @@ func getLinksDumaTV() []Data {
 	return getPageDumaTV(foundLinks)
 }
 
+type pageParseResultDumaTV struct {
+	Data    Data
+	Error   error
+	PageURL string
+	IsEmpty bool
+	Reasons []string
+}
+
 func getPageDumaTV(links []string) []Data {
 	var products []Data
 	var errItems []string
@@ -67,99 +86,151 @@ func getPageDumaTV(links []string) []Data {
 		return products
 	}
 
-	for _, pageURL := range links {
-		var title, body string
-		var tags []string
-		var parsDate time.Time
-		parsedSuccessfully := false
-		locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
-		layout := "2 01 2006 / 15:04"
+	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
+	layout := "2 01 2006 / 15:04"
+	tagsAreMandatory := true
 
-		doc, err := GetHTML(pageURL)
-		if err != nil {
-			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
-		} else {
-			title = strings.TrimSpace(doc.Find("h1.news-post-content__title").First().Text())
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: numWorkersDumaTV + 5,
+			IdleConnTimeout:     90 * time.Second,
+			MaxConnsPerHost:     numWorkersDumaTV,
+		},
+	}
 
-			var bodyBuilder strings.Builder
-			doc.Find("div.news-post-content__text").ChildrenFiltered("p, blockquote").Each(func(_ int, s *goquery.Selection) {
-				paragraphText := strings.TrimSpace(s.Text())
-				if paragraphText != "" {
-					if bodyBuilder.Len() > 0 {
-						bodyBuilder.WriteString("\n\n")
+	resultsChan := make(chan pageParseResultDumaTV, totalLinks)
+	linkChan := make(chan string, totalLinks)
+
+	for _, link := range links {
+		linkChan <- link
+	}
+	close(linkChan)
+
+	var wg sync.WaitGroup
+
+	actualNumWorkers := numWorkersDumaTV
+	if totalLinks < numWorkersDumaTV {
+		actualNumWorkers = totalLinks
+	}
+
+	for i := 0; i < actualNumWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for pageURL := range linkChan {
+				var title, body string
+				var tags []string
+				var parsDate time.Time
+
+				doc, err := GetHTMLForClient(httpClient, pageURL)
+				if err != nil {
+					resultsChan <- pageParseResultDumaTV{PageURL: pageURL, Error: fmt.Errorf("ошибка GET: %w", err)}
+					continue
+				}
+
+				title = strings.TrimSpace(doc.Find("h1.news-post-content__title").First().Text())
+
+				var bodyBuilder strings.Builder
+				doc.Find("div.news-post-content__text").ChildrenFiltered("p, blockquote").Each(func(_ int, s *goquery.Selection) {
+					paragraphText := strings.TrimSpace(s.Text())
+					if paragraphText != "" {
+						if bodyBuilder.Len() > 0 {
+							bodyBuilder.WriteString("\n\n")
+						}
+						bodyBuilder.WriteString(paragraphText)
 					}
-					bodyBuilder.WriteString(paragraphText)
-				}
-			})
-			body = bodyBuilder.String()
+				})
+				body = bodyBuilder.String()
 
-			doc.Find("div.post-tags div.post-tags__item a").Each(func(_ int, s *goquery.Selection) {
-				tagText := strings.TrimSpace(s.Text())
-				if tagText != "" {
-					tags = append(tags, tagText)
-				}
-			})
+				doc.Find("div.post-tags div.post-tags__item a").Each(func(_ int, s *goquery.Selection) {
+					tagText := strings.TrimSpace(s.Text())
+					if tagText != "" {
+						tags = append(tags, tagText)
+					}
+				})
 
-			dateTextRaw := doc.Find("div.news-post-top__date").First().Text()
-			dateToParse := strings.TrimSpace(dateTextRaw)
-			processedStr := dateToParse
+				dateTextRaw := doc.Find("div.news-post-top__date").First().Text()
+				dateToParse := strings.TrimSpace(dateTextRaw)
+				processedStr := dateToParse
+				var dateParseError error
 
-			if dateToParse != "" {
-				foundMonth := false
-				lowerDateToParse := strings.ToLower(dateToParse)
-				tempProcessedStr := dateToParse
+				if dateToParse != "" {
+					foundMonth := false
+					lowerDateToParse := strings.ToLower(dateToParse)
+					tempProcessedStr := dateToParse
 
-				for rusMonth, numMonth := range RussianMonths {
-					lowerRusMonth := strings.ToLower(rusMonth)
-					if strings.Contains(lowerDateToParse, lowerRusMonth) {
-						startIndex := strings.Index(lowerDateToParse, lowerRusMonth)
-						if startIndex != -1 {
-							tempProcessedStr = dateToParse[:startIndex] + numMonth + dateToParse[startIndex+len(rusMonth):]
-							foundMonth = true
-							break
+					for rusMonth, numMonth := range RussianMonths {
+						lowerRusMonth := strings.ToLower(rusMonth)
+						if strings.Contains(lowerDateToParse, lowerRusMonth) {
+							startIndex := strings.Index(lowerDateToParse, lowerRusMonth)
+							if startIndex != -1 {
+								tempProcessedStr = dateToParse[:startIndex] + numMonth + dateToParse[startIndex+len(rusMonth):]
+								foundMonth = true
+								break
+							}
 						}
 					}
-				}
-				if foundMonth {
-					processedStr = tempProcessedStr
-				} else if dateToParse != "" {
-					// fmt.Printf("%s[DUMATV]%s[DEBUG] Месяц не найден/не заменен в '%s'. Попытка парсинга как '%s'.%s\n", ColorBlue, ColorCyan, dateToParse, processedStr, ColorReset)
+					if foundMonth {
+						processedStr = tempProcessedStr
+					}
+
+					parsedTime, parseErr := time.ParseInLocation(layout, processedStr, locationPlus3)
+					if parseErr != nil {
+						dateParseError = parseErr
+						fmt.Printf("%s[DUMATV]%s[WARNING] Ошибка парсинга даты: '%s' (попытка с '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, processedStr, pageURL, parseErr, ColorReset)
+					} else {
+						parsDate = parsedTime
+					}
 				}
 
-				var parseErr error
-				parsDate, parseErr = time.ParseInLocation(layout, processedStr, locationPlus3)
-				if parseErr != nil {
-					fmt.Printf("%s[DUMATV]%s[WARNING] Ошибка парсинга даты: '%s' (попытка с '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, processedStr, pageURL, parseErr, ColorReset)
+				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) != 0) {
+					resultsChan <- pageParseResultDumaTV{Data: Data{
+						Href:  pageURL,
+						Title: title,
+						Body:  body,
+						Date:  parsDate,
+						Tags:  tags,
+					}}
+				} else {
+					var reasons []string
+					if title == "" {
+						reasons = append(reasons, "T:false")
+					}
+					if body == "" {
+						reasons = append(reasons, "B:false")
+					}
+					if parsDate.IsZero() {
+						reasonDate := "D:false"
+						if dateParseError != nil {
+							reasonDate = fmt.Sprintf("D:false (err: %v, original_str: '%s', processed_str: '%s')", dateParseError, dateToParse, processedStr)
+						} else if dateToParse == "" {
+							reasonDate = "D:false (empty_str)"
+						}
+						reasons = append(reasons, reasonDate)
+					}
+					if tagsAreMandatory && len(tags) == 0 {
+						reasons = append(reasons, "Tags:false")
+					}
+					resultsChan <- pageParseResultDumaTV{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}
 			}
+		}()
+	}
 
-			if title != "" && body != "" && !parsDate.IsZero() && len(tags) != 0 {
-				products = append(products, Data{
-					Href:  pageURL,
-					Title: title,
-					Body:  body,
-					Date:  parsDate,
-					Tags:  tags,
-				})
-				parsedSuccessfully = true
-			}
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
 
-			if !parsedSuccessfully && err == nil {
-				var reasons []string
-				if title == "" {
-					reasons = append(reasons, "T:false")
-				}
-				if body == "" {
-					reasons = append(reasons, "B:false")
-				}
-				if parsDate.IsZero() {
-					reasons = append(reasons, "D:false")
-				}
-				if len(tags) == 0 {
-					reasons = append(reasons, "Tags:false")
-				}
-				errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
-			}
+	for result := range resultsChan {
+		if result.Error != nil {
+			errItems = append(errItems, fmt.Sprintf("%s (%s)", result.PageURL, result.Error.Error()))
+		} else if result.IsEmpty {
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", result.PageURL, strings.Join(result.Reasons, ", ")))
+		} else {
+			products = append(products, result.Data)
 		}
 	}
 

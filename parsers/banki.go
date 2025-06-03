@@ -3,8 +3,10 @@ package parsers
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	. "parsing_media/utils"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -23,8 +25,9 @@ type ModuleOptionsJSONBanki struct {
 }
 
 const (
-	bankiURL     = "https://www.banki.ru"
-	bankiURLNews = "https://www.banki.ru/news/lenta/"
+	bankiURL        = "https://www.banki.ru"
+	bankiURLNews    = "https://www.banki.ru/news/lenta/"
+	numWorkersBanki = 10
 )
 
 func BankiMain() {
@@ -40,7 +43,16 @@ func getLinksBanki() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	doc, err := GetHTML(bankiURLNews)
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	doc, err := GetHTMLForClient(client, bankiURLNews)
 	if err != nil {
 		fmt.Printf("%s[BANKI]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, bankiURLNews, err, ColorReset)
 		return getPageBanki(foundLinks)
@@ -99,77 +111,133 @@ func getLinksBanki() []Data {
 	return getPageBanki(foundLinks)
 }
 
+type pageParseResultBanki struct {
+	Data    Data
+	Error   error
+	PageURL string
+	IsEmpty bool
+	Reasons []string
+}
+
 func getPageBanki(links []string) []Data {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
-	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
+	locationPlus3 := time.FixedZone("UTC+3", 3*3600)
 	dateTimeStr := "02.01.2006 15:04"
 
 	if totalLinks == 0 {
 		return products
 	}
 
-	for _, pageURL := range links {
-		var title, body string
-		var parsDate time.Time
-		parsedSuccessfully := false
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: numWorkersBanki + 5,
+			IdleConnTimeout:     90 * time.Second,
+			MaxConnsPerHost:     numWorkersBanki,
+		},
+	}
 
-		doc, err := GetHTML(pageURL)
-		if err != nil {
-			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
-		} else {
-			title = strings.TrimSpace(doc.Find("h1[class*='text-header-0']").First().Text())
+	resultsChan := make(chan pageParseResultBanki, totalLinks)
+	linkChan := make(chan string, totalLinks)
 
-			var bodyBuilder strings.Builder
-			doc.Find("div.l6d291019").Find("p, a, span, ol, li").Each(func(_ int, s *goquery.Selection) {
-				partText := strings.TrimSpace(s.Text())
-				if strings.Contains(partText, "Актуальные котировки, аналитические обзоры") ||
-					strings.HasPrefix(partText, "Самый большой финансовый маркетплейс в России") ||
-					strings.Contains(partText, "Оставайтесь в курсе событий") ||
-					strings.Contains(partText, "Топ 3 дебетовых карт") {
-					return
+	for _, link := range links {
+		linkChan <- link
+	}
+	close(linkChan)
+
+	var wg sync.WaitGroup
+
+	actualNumWorkers := numWorkersBanki
+	if totalLinks < numWorkersBanki {
+		actualNumWorkers = totalLinks
+	}
+
+	for i := 0; i < actualNumWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for pageURL := range linkChan {
+				var title, body string
+				var parsDate time.Time
+
+				doc, err := GetHTMLForClient(httpClient, pageURL)
+				if err != nil {
+					resultsChan <- pageParseResultBanki{PageURL: pageURL, Error: fmt.Errorf("ошибка GET: %w", err)}
+					continue
 				}
-				if partText != "" {
-					if bodyBuilder.Len() > 0 {
-						bodyBuilder.WriteString("\n\n")
+
+				title = strings.TrimSpace(doc.Find("h1[class*='text-header-0']").First().Text())
+
+				var bodyBuilder strings.Builder
+				doc.Find("div.l6d291019").Find("p, a, span, ol, li").Each(func(_ int, s *goquery.Selection) {
+					partText := strings.TrimSpace(s.Text())
+					if strings.Contains(partText, "Актуальные котировки, аналитические обзоры") ||
+						strings.HasPrefix(partText, "Самый большой финансовый маркетплейс в России") ||
+						strings.Contains(partText, "Оставайтесь в курсе событий") ||
+						strings.Contains(partText, "Топ 3 дебетовых карт") {
+						return
 					}
-					bodyBuilder.WriteString(partText)
+					if partText != "" {
+						if bodyBuilder.Len() > 0 {
+							bodyBuilder.WriteString("\n\n")
+						}
+						bodyBuilder.WriteString(partText)
+					}
+				})
+				body = bodyBuilder.String()
+
+				dateTextRaw := doc.Find("span[class*='l51e0a7a5']").First().Text()
+				dateTextClean := strings.TrimSpace(dateTextRaw)
+				dateToParse := dateTextClean
+
+				if strings.HasPrefix(dateTextClean, "Дата публикации: ") {
+					dateToParse = strings.TrimSpace(strings.TrimPrefix(dateTextClean, "Дата публикации: "))
 				}
-			})
-			body = bodyBuilder.String()
 
-			dateTextRaw := doc.Find("span[class*='l51e0a7a5']").First().Text()
-			dateTextClean := strings.TrimSpace(dateTextRaw)
+				if dateToParse != "" {
+					parsedTime, parseErr := time.ParseInLocation(dateTimeStr, dateToParse, locationPlus3)
+					if parseErr == nil {
+						parsDate = parsedTime
+					} else {
+						resultsChan <- pageParseResultBanki{PageURL: pageURL, Error: fmt.Errorf("ошибка парсинга даты '%s': %w", dateToParse, parseErr)}
+						continue
+					}
+				}
 
-			dateToParse := dateTextClean
+				if title != "" && body != "" && !parsDate.IsZero() {
+					resultsChan <- pageParseResultBanki{Data: Data{Href: pageURL, Title: title, Body: body, Date: parsDate}}
+				} else {
+					var reasons []string
+					if title == "" {
+						reasons = append(reasons, "T:false")
+					}
+					if body == "" {
+						reasons = append(reasons, "B:false")
+					}
+					if parsDate.IsZero() {
+						reasons = append(reasons, "D:false (исходная строка: '"+dateToParse+"')")
+					}
+					resultsChan <- pageParseResultBanki{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
+				}
+			}
+		}()
+	}
 
-			if strings.HasPrefix(dateTextClean, "Дата публикации: ") {
-				dateToParse = strings.TrimSpace(strings.TrimPrefix(dateTextClean, "Дата публикации: "))
-			}
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
 
-			if dateToParse != "" {
-				parsDate, _ = time.ParseInLocation(dateTimeStr, dateToParse, locationPlus3)
-			}
-
-			if title != "" && body != "" && !parsDate.IsZero() {
-				products = append(products, Data{Href: pageURL, Title: title, Body: body, Date: parsDate})
-				parsedSuccessfully = true
-			}
-		}
-
-		if !parsedSuccessfully && err == nil {
-			var reasons []string
-			if title == "" {
-				reasons = append(reasons, "T:false")
-			}
-			if body == "" {
-				reasons = append(reasons, "B:false")
-			}
-			if parsDate.IsZero() {
-				reasons = append(reasons, "D:false")
-			}
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
+	for result := range resultsChan {
+		if result.Error != nil {
+			errItems = append(errItems, fmt.Sprintf("%s (%s)", result.PageURL, result.Error.Error()))
+		} else if result.IsEmpty {
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", result.PageURL, strings.Join(result.Reasons, ", ")))
+		} else {
+			products = append(products, result.Data)
 		}
 	}
 

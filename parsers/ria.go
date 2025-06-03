@@ -2,8 +2,10 @@ package parsers
 
 import (
 	"fmt"
+	"net/http"
 	. "parsing_media/utils"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -12,13 +14,12 @@ import (
 const (
 	riaURL         = "https://ria.ru"
 	riaNewsPageURL = "https://ria.ru/lenta/"
+	numWorkersRia  = 10
 )
 
 func RiaMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksRia()
-
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[RIA]%s[INFO] Парсер RIA.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
@@ -28,7 +29,16 @@ func getLinksRia() []Data {
 	seenLinks := make(map[string]bool)
 	linkSelector := "a.list-item__title.color-font-hover-only"
 
-	doc, err := GetHTML(riaNewsPageURL)
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	doc, err := GetHTMLForClient(client, riaNewsPageURL)
 	if err != nil {
 		fmt.Printf("%s[RIA]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, riaNewsPageURL, err, ColorReset)
 		return getPageRia(foundLinks)
@@ -53,6 +63,14 @@ func getLinksRia() []Data {
 	return getPageRia(foundLinks)
 }
 
+type pageParseResultRia struct {
+	Data    Data
+	Error   error
+	PageURL string
+	IsEmpty bool
+	Reasons []string
+}
+
 func getPageRia(links []string) []Data {
 	var products []Data
 	var errItems []string
@@ -64,86 +82,137 @@ func getPageRia(links []string) []Data {
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
 	dateLayout := "15:04 02.01.2006"
+	tagsAreMandatory := true // RIA usually has tags
 
-	for _, pageURL := range links {
-		var title, body string
-		var tags []string
-		var parsDate time.Time
-		parsedSuccessfully := false
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: numWorkersRia + 5,
+			IdleConnTimeout:     90 * time.Second,
+			MaxConnsPerHost:     numWorkersRia,
+		},
+	}
 
-		doc, err := GetHTML(pageURL)
-		if err != nil {
-			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
-		} else {
-			title = strings.TrimSpace(doc.Find(".article__title").First().Text())
+	resultsChan := make(chan pageParseResultRia, totalLinks)
+	linkChan := make(chan string, totalLinks)
 
-			var bodyBuilder strings.Builder
-			var targetNodes *goquery.Selection
-			articleBodyNode := doc.Find(".article__body")
-			if articleBodyNode.Length() > 0 {
-				targetNodes = articleBodyNode.Find(".article__text, .article__quote-text")
-			} else {
-				targetNodes = doc.Find(".article__text, .article__quote-text")
-			}
+	for _, link := range links {
+		linkChan <- link
+	}
+	close(linkChan)
 
-			targetNodes.Each(func(j int, s *goquery.Selection) {
-				currentTextPart := strings.TrimSpace(s.Text())
-				if currentTextPart != "" {
-					if bodyBuilder.Len() > 0 {
-						bodyBuilder.WriteString("\n\n")
+	var wg sync.WaitGroup
+
+	actualNumWorkers := numWorkersRia
+	if totalLinks < numWorkersRia {
+		actualNumWorkers = totalLinks
+	}
+
+	for i := 0; i < actualNumWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for pageURL := range linkChan {
+				var title, body string
+				var tags []string
+				var parsDate time.Time
+
+				doc, err := GetHTMLForClient(httpClient, pageURL)
+				if err != nil {
+					resultsChan <- pageParseResultRia{PageURL: pageURL, Error: fmt.Errorf("ошибка GET: %w", err)}
+					continue
+				}
+
+				title = strings.TrimSpace(doc.Find(".article__title").First().Text())
+
+				var bodyBuilder strings.Builder
+				var targetNodes *goquery.Selection
+				articleBodyNode := doc.Find(".article__body")
+				if articleBodyNode.Length() > 0 {
+					targetNodes = articleBodyNode.Find(".article__text, .article__quote-text")
+				} else {
+					targetNodes = doc.Find(".article__text, .article__quote-text")
+				}
+
+				targetNodes.Each(func(j int, s *goquery.Selection) {
+					currentTextPart := strings.TrimSpace(s.Text())
+					if currentTextPart != "" {
+						if bodyBuilder.Len() > 0 {
+							bodyBuilder.WriteString("\n\n")
+						}
+						bodyBuilder.WriteString(currentTextPart)
 					}
-					bodyBuilder.WriteString(currentTextPart)
-				}
-			})
-			body = bodyBuilder.String()
-
-			dateTextRaw := doc.Find("div.article__info-date > a").First().Text()
-			dateToParse := strings.TrimSpace(dateTextRaw)
-
-			if dateToParse != "" {
-				var parseErr error
-				parsDate, parseErr = time.ParseInLocation(dateLayout, dateToParse, locationPlus3)
-				if parseErr != nil {
-					fmt.Printf("%s[RIA]%s[WARNING] Ошибка парсинга даты: '%s' (формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, dateLayout, pageURL, parseErr, ColorReset)
-				}
-			} else {
-				// fmt.Printf("%s[RIA]%s[DEBUG] Текст даты не найден на %s%s\n", ColorBlue, ColorCyan, pageURL, ColorReset)
-			}
-
-			doc.Find("div.article__tags a.article__tags-item").Each(func(_ int, s *goquery.Selection) {
-				tagText := strings.TrimSpace(s.Text())
-				if tagText != "" {
-					tags = append(tags, tagText)
-				}
-			})
-
-			if title != "" && body != "" && !parsDate.IsZero() && len(tags) > 0 {
-				products = append(products, Data{
-					Href:  pageURL,
-					Title: title,
-					Body:  body,
-					Date:  parsDate,
-					Tags:  tags,
 				})
-				parsedSuccessfully = true
-			}
-		}
+				body = bodyBuilder.String()
 
-		if !parsedSuccessfully && err == nil {
-			var reasons []string
-			if title == "" {
-				reasons = append(reasons, "T:false")
+				dateTextRaw := doc.Find("div.article__info-date > a").First().Text()
+				dateToParse := strings.TrimSpace(dateTextRaw)
+				var dateParseError error
+
+				if dateToParse != "" {
+					parsedTime, parseErr := time.ParseInLocation(dateLayout, dateToParse, locationPlus3)
+					if parseErr != nil {
+						dateParseError = parseErr
+						fmt.Printf("%s[RIA]%s[WARNING] Ошибка парсинга даты: '%s' (формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, dateLayout, pageURL, parseErr, ColorReset)
+					} else {
+						parsDate = parsedTime
+					}
+				}
+
+				doc.Find("div.article__tags a.article__tags-item").Each(func(_ int, s *goquery.Selection) {
+					tagText := strings.TrimSpace(s.Text())
+					if tagText != "" {
+						tags = append(tags, tagText)
+					}
+				})
+
+				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
+					resultsChan <- pageParseResultRia{Data: Data{
+						Href:  pageURL,
+						Title: title,
+						Body:  body,
+						Date:  parsDate,
+						Tags:  tags,
+					}}
+				} else {
+					var reasons []string
+					if title == "" {
+						reasons = append(reasons, "T:false")
+					}
+					if body == "" {
+						reasons = append(reasons, "B:false")
+					}
+					if parsDate.IsZero() {
+						reasonDate := "D:false"
+						if dateParseError != nil {
+							reasonDate = fmt.Sprintf("D:false (err: %v, str: '%s')", dateParseError, dateToParse)
+						} else if dateToParse == "" {
+							reasonDate = "D:false (empty_str)"
+						}
+						reasons = append(reasons, reasonDate)
+					}
+					if tagsAreMandatory && len(tags) == 0 {
+						reasons = append(reasons, "Tags:false")
+					}
+					resultsChan <- pageParseResultRia{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
+				}
 			}
-			if body == "" {
-				reasons = append(reasons, "B:false")
-			}
-			if parsDate.IsZero() {
-				reasons = append(reasons, "D:false")
-			}
-			if len(tags) == 0 {
-				reasons = append(reasons, "Tags:false")
-			}
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	for result := range resultsChan {
+		if result.Error != nil {
+			errItems = append(errItems, fmt.Sprintf("%s (%s)", result.PageURL, result.Error.Error()))
+		} else if result.IsEmpty {
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", result.PageURL, strings.Join(result.Reasons, ", ")))
+		} else {
+			products = append(products, result.Data)
 		}
 	}
 

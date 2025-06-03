@@ -2,23 +2,24 @@ package parsers
 
 import (
 	"fmt"
+	"net/http"
 	. "parsing_media/utils"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
 const (
-	fontankaURL     = "https://www.fontanka.ru"
-	fontankaURLNews = "https://www.fontanka.ru/politic/"
+	fontankaURL        = "https://www.fontanka.ru"
+	fontankaURLNews    = "https://www.fontanka.ru/politic/"
+	numWorkersFontanka = 10
 )
 
 func FontankaMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksFontanka()
-
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[FONTANKA]%s[INFO] Парсер Fontanka.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
@@ -27,7 +28,16 @@ func getLinksFontanka() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	doc, err := GetHTML(fontankaURLNews)
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	doc, err := GetHTMLForClient(client, fontankaURLNews)
 	if err != nil {
 		fmt.Printf("%s[FONTANKA]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, fontankaURLNews, err, ColorReset)
 		return getPageFontanka(foundLinks)
@@ -57,6 +67,14 @@ func getLinksFontanka() []Data {
 	return getPageFontanka(foundLinks)
 }
 
+type pageParseResultFontanka struct {
+	Data    Data
+	Error   error
+	PageURL string
+	IsEmpty bool
+	Reasons []string
+}
+
 func getPageFontanka(links []string) []Data {
 	var products []Data
 	var errItems []string
@@ -66,76 +84,127 @@ func getPageFontanka(links []string) []Data {
 		return products
 	}
 
-	for _, pageURL := range links {
-		var title, body string
-		var tags []string
-		var parsDate time.Time
-		parsedSuccessfully := false
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: numWorkersFontanka + 5,
+			IdleConnTimeout:     90 * time.Second,
+			MaxConnsPerHost:     numWorkersFontanka,
+		},
+	}
 
-		doc, err := GetHTML(pageURL)
-		if err != nil {
-			errItems = append(errItems, fmt.Sprintf("(ошибка GET: %s)", err.Error()))
-		} else {
-			title = strings.TrimSpace(doc.Find("h1[class*='title_BgFsr']").First().Text())
+	resultsChan := make(chan pageParseResultFontanka, totalLinks)
+	linkChan := make(chan string, totalLinks)
 
-			var bodyBuilder strings.Builder
-			doc.Find("div.uiArticleBlockText_5xJo1.text-style-body-1.c-text.block_0DdLJ").Find("p, a, li, blockquote").Each(func(_ int, s *goquery.Selection) {
-				partText := strings.TrimSpace(s.Text())
-				if partText != "" {
-					if bodyBuilder.Len() > 0 {
-						bodyBuilder.WriteString("\n\n")
-					}
-					bodyBuilder.WriteString(partText)
-				}
-			})
-			body = bodyBuilder.String()
+	for _, link := range links {
+		linkChan <- link
+	}
+	close(linkChan)
 
-			dateStr, exists := doc.Find("time.item_psvU3").Attr("datetime")
-			if exists {
-				parsedTime, err := time.Parse(time.RFC3339, dateStr)
+	var wg sync.WaitGroup
+
+	actualNumWorkers := numWorkersFontanka
+	if totalLinks < numWorkersFontanka {
+		actualNumWorkers = totalLinks
+	}
+
+	for i := 0; i < actualNumWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for pageURL := range linkChan {
+				var title, body string
+				var tags []string
+				var parsDate time.Time
+
+				doc, err := GetHTMLForClient(httpClient, pageURL)
 				if err != nil {
-					fmt.Printf("%s[FONTANKA]%s[WARNING] Ошибка парсинга даты из атрибута 'datetime': '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateStr, pageURL, err, ColorReset)
-				} else {
-					parsDate = parsedTime
+					resultsChan <- pageParseResultFontanka{PageURL: pageURL, Error: fmt.Errorf("ошибка GET: %w", err)}
+					continue
 				}
-			} else {
-				fmt.Printf("%s[FONTANKA]%s[WARNING] Атрибут 'datetime' не найден у тега 'time.item_psvU3' на %s%s\n", ColorBlue, ColorYellow, pageURL, ColorReset)
-			}
 
-			doc.Find("div.scrollableBlock_oYLvg a.tag_S1lW8").Each(func(_ int, s *goquery.Selection) {
-				tagText := strings.TrimSpace(s.Text())
-				if tagText != "" {
-					tags = append(tags, tagText)
-				}
-			})
+				title = strings.TrimSpace(doc.Find("h1[class*='title_BgFsr']").First().Text())
 
-			if title != "" && body != "" && !parsDate.IsZero() {
-				products = append(products, Data{
-					Href:  pageURL,
-					Title: title,
-					Body:  body,
-					Date:  parsDate,
-					Tags:  tags,
+				var bodyBuilder strings.Builder
+				doc.Find("div.uiArticleBlockText_5xJo1.text-style-body-1.c-text.block_0DdLJ").Find("p, a, li, blockquote").Each(func(_ int, s *goquery.Selection) {
+					partText := strings.TrimSpace(s.Text())
+					if partText != "" {
+						if bodyBuilder.Len() > 0 {
+							bodyBuilder.WriteString("\n\n")
+						}
+						bodyBuilder.WriteString(partText)
+					}
 				})
-				parsedSuccessfully = true
-			}
-		}
+				body = bodyBuilder.String()
 
-		if !parsedSuccessfully && err == nil {
-			var reasons []string
-			if title == "" {
-				reasons = append(reasons, "T:false")
+				dateStr, exists := doc.Find("time.item_psvU3").Attr("datetime")
+				var dateParseError error
+				if exists {
+					parsedTime, err := time.Parse(time.RFC3339, dateStr)
+					if err != nil {
+						dateParseError = err
+						fmt.Printf("%s[FONTANKA]%s[WARNING] Ошибка парсинга даты из атрибута 'datetime': '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateStr, pageURL, err, ColorReset)
+					} else {
+						parsDate = parsedTime
+					}
+				} else {
+					fmt.Printf("%s[FONTANKA]%s[WARNING] Атрибут 'datetime' не найден у тега 'time.item_psvU3' на %s%s\n", ColorBlue, ColorYellow, pageURL, ColorReset)
+				}
+
+				doc.Find("div.scrollableBlock_oYLvg a.tag_S1lW8").Each(func(_ int, s *goquery.Selection) {
+					tagText := strings.TrimSpace(s.Text())
+					if tagText != "" {
+						tags = append(tags, tagText)
+					}
+				})
+
+				if title != "" && body != "" && !parsDate.IsZero() {
+					resultsChan <- pageParseResultFontanka{Data: Data{
+						Href:  pageURL,
+						Title: title,
+						Body:  body,
+						Date:  parsDate,
+						Tags:  tags,
+					}}
+				} else {
+					var reasons []string
+					if title == "" {
+						reasons = append(reasons, "T:false")
+					}
+					if body == "" {
+						reasons = append(reasons, "B:false")
+					}
+					if parsDate.IsZero() {
+						reasonDate := "D:false"
+						if dateParseError != nil {
+							reasonDate = fmt.Sprintf("D:false (err: %v, str: '%s')", dateParseError, dateStr)
+						} else if !exists {
+							reasonDate = "D:false (attr_missing)"
+						}
+						reasons = append(reasons, reasonDate)
+					}
+					if len(tags) == 0 {
+						// reasons = append(reasons, "Tags:false") // Optional: Fontanka might not always have tags
+					}
+					resultsChan <- pageParseResultFontanka{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
+				}
 			}
-			if body == "" {
-				reasons = append(reasons, "B:false")
-			}
-			if parsDate.IsZero() {
-				reasons = append(reasons, "D:false")
-			}
-			if len(tags) == 0 {
-				reasons = append(reasons, "Tags:false")
-			}
-			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", pageURL, strings.Join(reasons, ", ")))
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	for result := range resultsChan {
+		if result.Error != nil {
+			errItems = append(errItems, fmt.Sprintf("%s (%s)", result.PageURL, result.Error.Error()))
+		} else if result.IsEmpty {
+			errItems = append(errItems, fmt.Sprintf("%s (нет данных: %s)", result.PageURL, strings.Join(result.Reasons, ", ")))
+		} else {
+			products = append(products, result.Data)
 		}
 	}
 
