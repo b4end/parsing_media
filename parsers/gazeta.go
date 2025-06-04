@@ -82,7 +82,7 @@ func getPageGazeta(links []string) []Data {
 		return products
 	}
 
-	tagsAreMandatoryForThisParser := true
+	tagsAreMandatoryForThisParser := false
 
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,

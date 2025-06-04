@@ -14,13 +14,16 @@ import (
 const (
 	mkURL         = "https://www.mk.ru"
 	mkNewsPageURL = "https://www.mk.ru/news/"
+	mkAutoURL     = "https://www.mk.ru/auto/"
 	numWorkersMK  = 10
 	mkDateLayout  = "2006-01-02T15:04:05-0700"
 )
 
 func MKMain() {
 	totalStartTime := time.Now()
+
 	_ = getLinksMK()
+
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[MK]%s[INFO] Парсер MK.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
@@ -51,7 +54,7 @@ func getLinksMK() []Data {
 		href, exists := s.Attr("href")
 		if exists {
 			isAd := s.Find("h3.news-listing__item_ad").Length() > 0
-			if !isAd && strings.HasPrefix(href, mkURL) {
+			if !isAd && strings.HasPrefix(href, mkURL) && !strings.HasPrefix(href, mkAutoURL) {
 				if !seenLinks[href] {
 					seenLinks[href] = true
 					foundLinks = append(foundLinks, href)
@@ -61,7 +64,7 @@ func getLinksMK() []Data {
 	})
 
 	if len(foundLinks) == 0 {
-		fmt.Printf("%s[MK]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s (или все найденные ссылки являются рекламными).%s\n", ColorBlue, ColorYellow, linkSelector, targetURL, ColorReset)
+		fmt.Printf("%s[MK]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s (или все найденные ссылки являются рекламными/автомобильными).%s\n", ColorBlue, ColorYellow, linkSelector, targetURL, ColorReset)
 	}
 
 	limit := 50
@@ -154,7 +157,6 @@ func getPageMK(links []string) []Data {
 					parsDate, parseErr = time.Parse(mkDateLayout, dateString)
 					if parseErr != nil {
 						fmt.Printf("%s[MK]%s[WARNING] Ошибка парсинга даты: '%s' (формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateString, mkDateLayout, pageURL, parseErr, ColorReset)
-						// Continue processing even if date parsing fails, but date will be zero
 					}
 				}
 

@@ -12,4 +12,5 @@ require (
 	github.com/vbauerster/mpb/v8 v8.10.1 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 )
