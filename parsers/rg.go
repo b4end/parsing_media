@@ -189,9 +189,9 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 					dateParseError = nil
 				}
 
-				if dateParseError != nil && parsDate.IsZero() {
-					fmt.Printf("%s[RG]%s[WARNING] Ошибка парсинга даты: '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, pageURL, dateParseError, ColorReset)
-				}
+				//if dateParseError != nil && parsDate.IsZero() {
+				//	fmt.Printf("%s[RG]%s[WARNING] Ошибка парсинга даты: '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, pageURL, dateParseError, ColorReset)
+				//}
 
 				doc.Find(".EditorialTags_tags__7zYTH a .EditorialTags_tag__BMT4K").Each(func(_ int, s *goquery.Selection) {
 					tagText := strings.TrimSpace(s.Text())

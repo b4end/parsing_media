@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	. "parsing_media/utils"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +84,129 @@ type pageParseResultMK struct {
 	Reasons []string
 }
 
+var (
+	russianMonthsGenitive = map[string]time.Month{
+		"января":   time.January,
+		"февраля":  time.February,
+		"марта":    time.March,
+		"апреля":   time.April,
+		"мая":      time.May,
+		"июня":     time.June,
+		"июля":     time.July,
+		"августа":  time.August,
+		"сентября": time.September,
+		"октября":  time.October,
+		"ноября":   time.November,
+		"декабря":  time.December,
+	}
+	altDateRegex = regexp.MustCompile(`^(\d{1,2})\s+([а-яА-Я]+),?\s+(\d{2}:\d{2})$`)
+)
+
+func parseHHMM(hhmmStr string) (hour, minute int, err error) {
+	parts := strings.Split(hhmmStr, ":")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid HH:MM format: '%s', expected 2 parts, got %d", hhmmStr, len(parts))
+	}
+	hour, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid hour in HH:MM string '%s': %w", hhmmStr, err)
+	}
+	minute, err = strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid minute in HH:MM string '%s': %w", hhmmStr, err)
+	}
+
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return 0, 0, fmt.Errorf("time out of range in HH:MM string '%s': H=%d, M=%d", hhmmStr, hour, minute)
+	}
+	return hour, minute, nil
+}
+
+func parseRelativeTime(timeStr string, referenceTime time.Time, dayOffset int, loc *time.Location) (time.Time, error) {
+	hour, minute, err := parseHHMM(timeStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("relative time parse: %w", err)
+	}
+
+	targetDay := referenceTime.AddDate(0, 0, dayOffset)
+	return time.Date(targetDay.Year(), targetDay.Month(), targetDay.Day(), hour, minute, 0, 0, loc), nil
+}
+
+func parseMkDate(dateString string) (time.Time, error) {
+	t, err := time.Parse(mkDateLayout, dateString)
+	if err == nil {
+		return t, nil
+	}
+	originalErr := err
+
+	loc, locErr := time.LoadLocation("Europe/Moscow")
+	if locErr != nil {
+		loc = time.FixedZone("MSK", 3*60*60)
+	}
+	now := time.Now().In(loc)
+
+	lowerDateString := strings.ToLower(dateString)
+	if strings.HasPrefix(lowerDateString, "сегодня,") {
+		timeStr := strings.TrimSpace(dateString[len("сегодня,"):])
+		parsedTime, err := parseRelativeTime(timeStr, now, 0, loc)
+		if err == nil {
+			return parsedTime, nil
+		}
+	} else if strings.HasPrefix(lowerDateString, "сегодня ") {
+		timeStr := strings.TrimSpace(dateString[len("сегодня "):])
+		parsedTime, err := parseRelativeTime(timeStr, now, 0, loc)
+		if err == nil {
+			return parsedTime, nil
+		}
+	}
+
+	if strings.HasPrefix(lowerDateString, "вчера,") {
+		timeStr := strings.TrimSpace(dateString[len("вчера,"):])
+		parsedTime, err := parseRelativeTime(timeStr, now, -1, loc)
+		if err == nil {
+			return parsedTime, nil
+		}
+	} else if strings.HasPrefix(lowerDateString, "вчера ") {
+		timeStr := strings.TrimSpace(dateString[len("вчера "):])
+		parsedTime, err := parseRelativeTime(timeStr, now, -1, loc)
+		if err == nil {
+			return parsedTime, nil
+		}
+	}
+
+	matches := altDateRegex.FindStringSubmatch(dateString)
+	if len(matches) == 4 {
+		dayStr := matches[1]
+		monthNameStr := strings.ToLower(matches[2])
+		timeStr := matches[3]
+
+		day, errDay := strconv.Atoi(dayStr)
+		if errDay != nil {
+			return time.Time{}, fmt.Errorf("alt date parse: invalid day '%s' from '%s'", dayStr, dateString)
+		}
+
+		month, monthFound := russianMonthsGenitive[monthNameStr]
+		if !monthFound {
+			return time.Time{}, fmt.Errorf("alt date parse: unknown month '%s' from '%s'", monthNameStr, dateString)
+		}
+
+		hour, minute, errTime := parseHHMM(timeStr)
+		if errTime != nil {
+			return time.Time{}, fmt.Errorf("alt date parse: invalid time '%s' from '%s': %w", timeStr, dateString, errTime)
+		}
+
+		currentYear := now.Year()
+		parsedTime := time.Date(currentYear, month, day, hour, minute, 0, 0, loc)
+
+		if parsedTime.After(now.Add(24 * time.Hour)) {
+			parsedTime = time.Date(currentYear-1, month, day, hour, minute, 0, 0, loc)
+		}
+		return parsedTime, nil
+	}
+
+	return time.Time{}, fmt.Errorf("failed to parse date '%s' with standard layout (err: %v) or any alternative format", dateString, originalErr)
+}
+
 func getPageMK(links []string) []Data {
 	var products []Data
 	var errItems []string
@@ -151,13 +276,16 @@ func getPageMK(links []string) []Data {
 				})
 				body = bodyBuilder.String()
 
+				var dateParseErrorMessage string
 				dateString, exists := doc.Find("time.meta__text[datetime]").Attr("datetime")
 				if exists && dateString != "" {
 					var parseErr error
-					parsDate, parseErr = time.Parse(mkDateLayout, dateString)
+					parsDate, parseErr = parseMkDate(dateString)
 					if parseErr != nil {
-						fmt.Printf("%s[MK]%s[WARNING] Ошибка парсинга даты: '%s' (формат '%s') на %s: %v%s\n", ColorBlue, ColorYellow, dateString, mkDateLayout, pageURL, parseErr, ColorReset)
+						dateParseErrorMessage = fmt.Sprintf("исходная строка: '%s', ошибка: %v", dateString, parseErr)
 					}
+				} else {
+					dateParseErrorMessage = "атрибут datetime отсутствует или пуст"
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() {
@@ -171,13 +299,21 @@ func getPageMK(links []string) []Data {
 				} else {
 					var reasons []string
 					if title == "" {
-						reasons = append(reasons, "T:false")
+						reasons = append(reasons, "T:false (пустой заголовок)")
 					}
 					if body == "" {
-						reasons = append(reasons, "B:false")
+						reasons = append(reasons, "B:false (пустое тело статьи)")
 					}
 					if parsDate.IsZero() {
-						reasons = append(reasons, "D:false (исходная строка: '"+dateString+"')")
+						reasonMsg := "D:false"
+						if dateParseErrorMessage != "" {
+							reasonMsg += " (" + dateParseErrorMessage + ")"
+						} else if dateString != "" {
+							reasonMsg += " (исходная строка: '" + dateString + "')"
+						} else {
+							reasonMsg += " (атрибут datetime не найден или пуст)"
+						}
+						reasons = append(reasons, reasonMsg)
 					}
 					resultsChan <- pageParseResultMK{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}

@@ -13,7 +13,7 @@ import (
 func main() {
 	for true {
 		var num string
-		fmt.Printf("%sMENU BAR%s\n! - Exit\n0 - Run all\n1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n8 - Smotrim\n9 - Banki\n10 - DumaTV\n11 - RBC\n12 - Izvestiya\n13 - Interfax\n14 - RG\n15 - KP\nOption: ", ColorYellow, ColorReset)
+		fmt.Printf("%sMENU BAR%s\n! - Exit\n0 - Run all\n1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n8 - Smotrim\n9 - Banki\n10 - DumaTV\n11 - RBC\n12 - Izvestiya\n13 - Interfax\n14 - RG\n15 - KP\n16 - Ura\n17 - Life\n18 - Regnum\n19 - Tass\n20 - Vedomosti\nOption: ", ColorYellow, ColorReset)
 		fmt.Scan(&num)
 
 		switch num {
@@ -55,6 +55,11 @@ func main() {
 					{"Interfax", parsers.InterfaxMain},
 					{"RG", parsers.RGMain},
 					{"KP", parsers.KPMain},
+					{"Ura", parsers.UraMain},
+					{"Life", parsers.LifeMain},
+					{"Regnum", parsers.RegnumMain},
+					{"Tass", parsers.TassMain},
+					{"Vedomosti", parsers.VedomostiMain},
 				}
 
 				fmt.Printf("\n%s[INFO] Запуск всех парсеров%s\n\n", ColorBlue, ColorReset)
@@ -94,8 +99,6 @@ func main() {
 
 				go func() {
 					defer wgCountdown.Done()
-					// Update ~30 times per second (1000ms / 30fps ≈ 33ms)
-					// For ~60fps, use 16*time.Millisecond or 17*time.Millisecond
 					ticker := time.NewTicker(33 * time.Millisecond)
 					defer ticker.Stop()
 
@@ -173,6 +176,16 @@ func main() {
 			parsers.RGMain()
 		case "15":
 			parsers.KPMain()
+		case "16":
+			parsers.UraMain()
+		case "17":
+			parsers.LifeMain()
+		case "18":
+			parsers.RegnumMain()
+		case "19":
+			parsers.TassMain()
+		case "20":
+			parsers.VedomostiMain()
 		}
 	}
 }
