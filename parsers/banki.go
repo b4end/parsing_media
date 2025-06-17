@@ -32,9 +32,7 @@ const (
 
 func BankiMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksBanki()
-
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[BANKI]%s[INFO] Парсер Banki.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
@@ -208,7 +206,20 @@ func getPageBanki(links []string) []Data {
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() {
-					resultsChan <- pageParseResultBanki{Data: Data{Href: pageURL, Title: title, Body: body, Date: parsDate}}
+					dataItem := Data{
+						Site:  bankiURL,
+						Href:  pageURL,
+						Title: title,
+						Body:  body,
+						Date:  parsDate,
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultBanki{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultBanki{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

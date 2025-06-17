@@ -14,17 +14,17 @@ import (
 const (
 	rgURL         = "https://rg.ru"
 	rgNewsPageURL = "https://rg.ru/news.html"
-	numWorkersRG  = 10 // Изменено с numWorkersRg
+	numWorkersRG  = 10
 )
 
-func RGMain() { // Изменено с RgMain
+func RGMain() {
 	totalStartTime := time.Now()
-	_ = getLinksRG() // Изменено с getLinksRg
+	_ = getLinksRG()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[RG]%s[INFO] Парсер RG.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[RG]%s[INFO] Парсер RG.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksRG() []Data { // Изменено с getLinksRg
+func getLinksRG() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "ul.PageNewsContent_list__P3OgM li.PageNewsContent_item__NmJXl a.PageNewsContentItem_root__oascP"
@@ -41,7 +41,7 @@ func getLinksRG() []Data { // Изменено с getLinksRg
 	doc, err := GetHTMLForClient(client, rgNewsPageURL)
 	if err != nil {
 		fmt.Printf("%s[RG]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, rgNewsPageURL, err, ColorReset)
-		return getPageRG(foundLinks) // Изменено с getPageRg
+		return getPageRG(foundLinks)
 	}
 
 	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
@@ -74,10 +74,10 @@ func getLinksRG() []Data { // Изменено с getLinksRg
 		fmt.Printf("%s[RG]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, rgNewsPageURL, ColorReset)
 	}
 
-	return getPageRG(foundLinks) // Изменено с getPageRg
+	return getPageRG(foundLinks)
 }
 
-type pageParseResultRG struct { // Изменено с pageParseResultRg
+type pageParseResultRG struct {
 	Data    Data
 	Error   error
 	PageURL string
@@ -85,7 +85,7 @@ type pageParseResultRG struct { // Изменено с pageParseResultRg
 	Reasons []string
 }
 
-func getPageRG(links []string) []Data { // Изменено с getPageRg
+func getPageRG(links []string) []Data {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
@@ -102,13 +102,13 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: numWorkersRG + 5, // Изменено
+			MaxIdleConnsPerHost: numWorkersRG + 5,
 			IdleConnTimeout:     90 * time.Second,
-			MaxConnsPerHost:     numWorkersRG, // Изменено
+			MaxConnsPerHost:     numWorkersRG,
 		},
 	}
 
-	resultsChan := make(chan pageParseResultRG, totalLinks) // Изменено
+	resultsChan := make(chan pageParseResultRG, totalLinks)
 	linkChan := make(chan string, totalLinks)
 
 	for _, link := range links {
@@ -118,8 +118,8 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 
 	var wg sync.WaitGroup
 
-	actualNumWorkers := numWorkersRG // Изменено
-	if totalLinks < numWorkersRG {   // Изменено
+	actualNumWorkers := numWorkersRG
+	if totalLinks < numWorkersRG {
 		actualNumWorkers = totalLinks
 	}
 
@@ -135,7 +135,7 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 
 				doc, err := GetHTMLForClient(httpClient, pageURL)
 				if err != nil {
-					resultsChan <- pageParseResultRG{PageURL: pageURL, Error: fmt.Errorf("ошибка GET: %w", err)} // Изменено
+					resultsChan <- pageParseResultRG{PageURL: pageURL, Error: fmt.Errorf("ошибка GET: %w", err)}
 					continue
 				}
 
@@ -189,10 +189,6 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 					dateParseError = nil
 				}
 
-				//if dateParseError != nil && parsDate.IsZero() {
-				//	fmt.Printf("%s[RG]%s[WARNING] Ошибка парсинга даты: '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, pageURL, dateParseError, ColorReset)
-				//}
-
 				doc.Find(".EditorialTags_tags__7zYTH a .EditorialTags_tag__BMT4K").Each(func(_ int, s *goquery.Selection) {
 					tagText := strings.TrimSpace(s.Text())
 					if strings.HasPrefix(tagText, "#") {
@@ -224,13 +220,21 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultRG{Data: Data{ // Изменено
+					dataItem := Data{
+						Site:  rgURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultRG{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultRG{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -251,7 +255,7 @@ func getPageRG(links []string) []Data { // Изменено с getPageRg
 					if tagsAreMandatory && len(tags) == 0 {
 						reasons = append(reasons, "Tags:false")
 					}
-					resultsChan <- pageParseResultRG{PageURL: pageURL, IsEmpty: true, Reasons: reasons} // Изменено
+					resultsChan <- pageParseResultRG{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}
 			}
 		}()

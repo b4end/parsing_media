@@ -185,13 +185,21 @@ func getPageLenta(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultLenta{Data: Data{
+					dataItem := Data{
+						Site:  lentaURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultLenta{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultLenta{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

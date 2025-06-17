@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	. "parsing_media/utils"
-	"regexp"  // Понадобится для извлечения даты из строки "X минут/час/часов назад"
-	"strconv" // Для преобразования чисел из строки
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +16,7 @@ import (
 
 const (
 	kpURL         = "https://www.kp.ru"
-	kpNewsPageURL = "https://www.kp.ru/online/" // Убедимся, что URL правильный
+	kpNewsPageURL = "https://www.kp.ru/online/"
 	numWorkersKP  = 10
 )
 
@@ -24,15 +24,12 @@ func KPMain() {
 	totalStartTime := time.Now()
 	_ = getLinksKP()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[KP]%s[INFO] Парсер KP.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[KP]%s[INFO] Парсер KP.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksKP() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
-	// Селектор для ссылок на статьи в ленте новостей
-	// Нацеливаемся на <a class="sc-1tputnk-2 drlShK"> или <a class="sc-1tputnk-3 dcIDGO">
-	// Оба они содержат href="/online/news/ID/"
 	linkSelector := "div.sc-lvle83-0 a[href^='/online/news/']"
 
 	client := &http.Client{
@@ -53,8 +50,6 @@ func getLinksKP() []Data {
 	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
-			// Убедимся, что это действительно ссылка на новость, а не на рубрику
-			// Ссылки на новости имеют вид /online/news/ID/
 			if strings.HasPrefix(href, "/online/news/") && strings.Count(strings.Trim(href, "/"), "/") == 2 {
 				fullURL := kpURL + href
 
@@ -84,7 +79,6 @@ type pageParseResultKP struct {
 	Reasons []string
 }
 
-// parseRelativeTime преобразует строки типа "X минут/час/часов назад" в time.Time
 func parseRelativeTimeKP(timeStr string) (time.Time, error) {
 	now := time.Now()
 
@@ -107,16 +101,12 @@ func parseRelativeTimeKP(timeStr string) (time.Time, error) {
 		return now.Add(-time.Duration(hours) * time.Hour), nil
 	}
 
-	// Если это не относительное время, пытаемся парсить как абсолютное "DD MMMM YYYY HH:MM"
-	// Пример: "4 июня 2025 19:13"
-	// Сначала заменим русские месяцы
 	tempDateStr := timeStr
 	for rusM, engMNum := range RussianMonths {
 		tempDateStr = strings.ReplaceAll(tempDateStr, rusM, engMNum)
 	}
-	// Формат "2 01 2006 15:04"
 	layoutAbsolute := "2 01 2006 15:04"
-	locationMSK := time.FixedZone("MSK", 3*60*60) // КП обычно в MSK
+	locationMSK := time.FixedZone("MSK", 3*60*60)
 	parsedTime, err := time.ParseInLocation(layoutAbsolute, tempDateStr, locationMSK)
 	if err == nil {
 		return parsedTime, nil
@@ -134,7 +124,7 @@ func getPageKP(links []string) []Data {
 		return products
 	}
 
-	locationMSK := time.FixedZone("MSK", 3*60*60) // КП обычно в MSK
+	locationMSK := time.FixedZone("MSK", 3*60*60)
 	tagsAreMandatory := false
 
 	httpClient := &http.Client{
@@ -181,13 +171,11 @@ func getPageKP(links []string) []Data {
 				title = strings.TrimSpace(doc.Find("h1.sc-j7em19-3.eyeguj").First().Text())
 
 				var bodyBuilder strings.Builder
-				// div[data-gtm-el="content-body"] p.sc-1wayp1z-16
 				doc.Find("div[data-gtm-el='content-body'] p.sc-1wayp1z-16").Each(func(j int, s *goquery.Selection) {
-					// Исключаем <p> внутри рекламных/промо блоков
-					if s.Closest("div.sc-1tputnk-12.cizwKg.sc-14w6ld7-0.hKabcu").Length() > 0 { // Промо-блок из примера
+					if s.Closest("div.sc-1tputnk-12.cizwKg.sc-14w6ld7-0.hKabcu").Length() > 0 {
 						return
 					}
-					if s.Closest("div[data-name='10.1m']").Length() > 0 { // Рекламный блок
+					if s.Closest("div[data-name='10.1m']").Length() > 0 {
 						return
 					}
 
@@ -201,18 +189,14 @@ func getPageKP(links []string) []Data {
 				})
 				body = bodyBuilder.String()
 
-				// Дата на kp.ru часто бывает в формате "X минут/час назад" или "DD MMMM YYYY HH:MM"
-				// <span class="sc-j7em19-1 dtkLMY">4 июня 2025 19:13</span>
 				dateTextRaw := strings.TrimSpace(doc.Find("span.sc-j7em19-1.dtkLMY").First().Text())
-				if dateTextRaw == "" { // Попытка найти дату в ленте, если на странице статьи ее нет в явном виде (маловероятно для КП)
-					// Это скорее для времени типа "час назад" которое может быть в ленте
+				if dateTextRaw == "" {
 					dateTextRaw = strings.TrimSpace(doc.Find("span.sc-1tputnk-9.gpa-DyG").First().Text())
 				}
 
 				if dateTextRaw != "" {
 					parsedTime, parseErr := parseRelativeTimeKP(dateTextRaw)
 					if parseErr != nil {
-						// Дополнительная попытка извлечь из JSON-LD, если он есть
 						doc.Find("script[type='application/ld+json']").EachWithBreak(func(_ int, sNode *goquery.Selection) bool {
 							var jsonData map[string]interface{}
 							if err := json.Unmarshal([]byte(sNode.Text()), &jsonData); err == nil {
@@ -220,17 +204,17 @@ func getPageKP(links []string) []Data {
 									pt, errLd := time.Parse(time.RFC3339, datePublished)
 									if errLd == nil {
 										parsDate = pt.In(locationMSK)
-										return false // Прерываем цикл, дата найдена
+										return false
 									}
 								}
 							}
 							return true
 						})
-						if parsDate.IsZero() { // Если JSON-LD не помог
+						if parsDate.IsZero() {
 							dateParseError = fmt.Errorf("ошибка парсинга даты '%s': %v", dateTextRaw, parseErr)
 						}
 					} else {
-						parsDate = parsedTime.In(locationMSK) // Убедимся, что относительное время тоже в MSK
+						parsDate = parsedTime.In(locationMSK)
 					}
 				} else {
 					dateParseError = fmt.Errorf("строка даты не найдена")
@@ -245,21 +229,12 @@ func getPageKP(links []string) []Data {
 					fmt.Printf("%s[KP]%s[WARNING] Ошибка парсинга даты: '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateTextRaw, pageURL, dateParseError, ColorReset)
 				}
 
-				// Теги: <div class="sc-j7em19-2 dQphFo"><a class="sc-1vxg2pp-0 cXMtmu">Тег</a>...</div>
-				// Первый элемент в этом блоке обычно "Новости", его можно пропустить, если это нежелательный тег.
-				// Остальные - рубрики/темы.
 				doc.Find("div.sc-j7em19-2.dQphFo a.sc-1vxg2pp-0.cXMtmu").Each(func(i int, s *goquery.Selection) {
-					// Пропускаем первый элемент "Новости", если он всегда там и не нужен как тег
-					// if i == 0 && strings.ToLower(strings.TrimSpace(s.Text())) == "новости" {
-					// 	return
-					// }
 					tagText := strings.TrimSpace(s.Text())
 					if tagText != "" {
 						tags = append(tags, tagText)
 					}
 				})
-				// Альтернативный поиск тегов, если они есть в другом месте (пример, если на странице будут явные теги статьи)
-				// doc.Find(".article-tags a, .tags-list a").Each(...)
 
 				if len(tags) > 0 {
 					seenTags := make(map[string]bool)
@@ -274,13 +249,21 @@ func getPageKP(links []string) []Data {
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultKP{Data: Data{
+					dataItem := Data{
+						Site:  kpURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultKP{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultKP{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

@@ -19,13 +19,12 @@ const (
 	numWorkersRbc  = 10
 )
 
-// Структура для парсинга JSON из __NEXT_DATA__
 type RbcNextData struct {
 	Props struct {
 		PageProps struct {
 			ArticleItem struct {
 				Title             string `json:"title"`
-				BodyMd            string `json:"bodyMd"` // Тело статьи в Markdown
+				BodyMd            string `json:"bodyMd"`
 				PublishDateT      int64  `json:"publishDateT"`
 				ModifDateT        int64  `json:"modifDateT"`
 				FirstPublishDateT int64  `json:"firstPublishDateT"`
@@ -41,7 +40,7 @@ func RbcMain() {
 	totalStartTime := time.Now()
 	_ = getLinksRbc()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[RBC]%s[INFO] Парсер RBC.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[RBC]%s[INFO] Парсер RBC.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksRbc() []Data {
@@ -67,12 +66,6 @@ func getLinksRbc() []Data {
 	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
-			// Основная проверка на домен www.rbc.ru
-			// Для других поддоменов (industries, wine, etc.) ссылки могут быть абсолютными
-			// или относительными к их собственным доменам.
-			// В данном случае, мы берем все, что начинается с https:// и содержит rbc.ru
-			// и потом будем фильтровать на этапе парсинга отдельных страниц или здесь более строго.
-			// Сейчас ограничимся только www.rbc.ru/
 			if strings.HasPrefix(href, "https://www.rbc.ru/") {
 				if idx := strings.Index(href, "?"); idx != -1 {
 					href = href[:idx]
@@ -93,8 +86,6 @@ func getLinksRbc() []Data {
 				strings.HasPrefix(href, "https://sportrbc.ru/") ||
 				strings.HasPrefix(href, "https://pro.rbc.ru/") ||
 				strings.HasPrefix(href, "https://realty.rbc.ru/")) && !strings.Contains(href, "?from=newsfeed") {
-				// Добавляем и другие релевантные поддомены, если они появляются в ленте
-				// Убедимся, что это новостные ссылки, а не рекламные или служебные
 				if idx := strings.Index(href, "?"); idx != -1 {
 					href = href[:idx]
 				}
@@ -128,11 +119,9 @@ type pageParseResultRbc struct {
 }
 
 func markdownToPlainText(md string) string {
-	// Убираем Markdown ссылки: [текст](url) -> текст
 	reLink := regexp.MustCompile(`\[([^\]]+)\]\([^\)]+\)`)
 	text := reLink.ReplaceAllString(md, "$1")
 
-	// Убираем Markdown для жирного и курсива: **жирный**, *курсив* -> жирный, курсив
 	reBold1 := regexp.MustCompile(`\*\*([^\*]+)\*\*`)
 	text = reBold1.ReplaceAllString(text, "$1")
 	reBold2 := regexp.MustCompile(`__([^_]+)__`)
@@ -142,19 +131,14 @@ func markdownToPlainText(md string) string {
 	reItalic2 := regexp.MustCompile(`_([^_]+)_`)
 	text = reItalic2.ReplaceAllString(text, "$1")
 
-	// Заменяем « и » на обычные кавычки
 	text = strings.ReplaceAll(text, "«", "\"")
 	text = strings.ReplaceAll(text, "»", "\"")
-	// Заменяем — на тире
 	text = strings.ReplaceAll(text, "—", "—")
-	// Заменяем   на пробел
 	text = strings.ReplaceAll(text, " ", " ")
 
-	// Убираем оставшиеся HTML-сущности (простой вариант)
 	reHTML := regexp.MustCompile(`&[a-zA-Z0-9#]+;`)
 	text = reHTML.ReplaceAllString(text, "")
 
-	// Убираем множественные пробелы и переносы строк, оставляя абзацы
 	text = strings.ReplaceAll(text, "\n\n", "<TEMP_PARAGRAPH>")
 	text = strings.ReplaceAll(text, "\n", " ")
 	text = strings.ReplaceAll(text, "<TEMP_PARAGRAPH>", "\n\n")
@@ -215,7 +199,6 @@ func getPageRbc(links []string) []Data {
 					continue
 				}
 
-				// Попытка извлечь данные из __NEXT_DATA__
 				nextDataScript := doc.Find("script#__NEXT_DATA__").First()
 				if nextDataScript.Length() > 0 {
 					jsonData := nextDataScript.Text()
@@ -223,10 +206,10 @@ func getPageRbc(links []string) []Data {
 					err = json.Unmarshal([]byte(jsonData), &rbcData)
 					if err == nil && rbcData.Props.PageProps.ArticleItem.Title != "" {
 						title = strings.TrimSpace(rbcData.Props.PageProps.ArticleItem.Title)
-						body = markdownToPlainText(rbcData.Props.PageProps.ArticleItem.BodyMd) // Преобразуем Markdown в текст
+						body = markdownToPlainText(rbcData.Props.PageProps.ArticleItem.BodyMd)
 
 						timestamp := rbcData.Props.PageProps.ArticleItem.PublishDateT
-						if rbcData.Props.PageProps.ArticleItem.FirstPublishDateT != 0 { // Иногда FirstPublishDateT более точен
+						if rbcData.Props.PageProps.ArticleItem.FirstPublishDateT != 0 {
 							timestamp = rbcData.Props.PageProps.ArticleItem.FirstPublishDateT
 						}
 						if timestamp > 0 {
@@ -245,12 +228,11 @@ func getPageRbc(links []string) []Data {
 					}
 				}
 
-				// Если из __NEXT_DATA__ не получилось, пробуем старые селекторы
 				if title == "" {
 					title = strings.TrimSpace(doc.Find(".article__header__title-in").First().Text())
 				}
 				if title == "" {
-					title = strings.TrimSpace(doc.Find("h1.article__header__title-in").First().Text()) // Чуть более общий для старого формата
+					title = strings.TrimSpace(doc.Find("h1.article__header__title-in").First().Text())
 				}
 				if title == "" {
 					title = strings.TrimSpace(doc.Find("h1.article__title").First().Text())
@@ -258,18 +240,17 @@ func getPageRbc(links []string) []Data {
 				if title == "" {
 					title = strings.TrimSpace(doc.Find("h1.article-title").First().Text())
 				}
-				if title == "" { // Для страниц типа industries, wine (новый формат, если NEXT_DATA не сработало)
+				if title == "" {
 					title = strings.TrimSpace(doc.Find("h1.article-entry-title").First().Text())
 				}
 
 				if body == "" {
 					var bodyBuilder strings.Builder
-					// Селекторы для основного контента старого типа и нового (если NEXT_DATA не сработало)
 					doc.Find(".article__text p, .article__text_free p, .article-body__content p, .l-col-main .article__content p, .article-item-content p.paragraph, div[itemprop='articleBody'] p").Each(func(j int, s *goquery.Selection) {
 						if s.Find("a[href*='t.me']").Length() > 0 && strings.Contains(s.Text(), "Читайте РБК в Telegram") {
 							return
 						}
-						if s.Closest("figure").Length() > 0 || s.Closest(".article__inline-item").Length() > 0 || s.Closest(".article__inline-video").Length() > 0 || s.Closest(".styles_container__0VbDM").Length() > 0 { // Добавил исключение для видео блока нового формата
+						if s.Closest("figure").Length() > 0 || s.Closest(".article__inline-item").Length() > 0 || s.Closest(".article__inline-video").Length() > 0 || s.Closest(".styles_container__0VbDM").Length() > 0 {
 							return
 						}
 						currentTextPart := strings.TrimSpace(s.Text())
@@ -283,7 +264,7 @@ func getPageRbc(links []string) []Data {
 					body = bodyBuilder.String()
 				}
 
-				if parsDate.IsZero() { // Если дата не была извлечена из __NEXT_DATA__
+				if parsDate.IsZero() {
 					dateTextRaw := ""
 					dateNode := doc.Find("time.article__header__date").First()
 					if dateNode.Length() > 0 {
@@ -301,19 +282,17 @@ func getPageRbc(links []string) []Data {
 							dateTextRaw, _ = dateNode.Attr("content")
 						}
 					}
-					if dateTextRaw == "" { // Для страниц нового формата (industries, wine)
+					if dateTextRaw == "" {
 						dateNode = doc.Find(".article-entry-meta .meta-info-row-date").First()
-						dateTextRaw = dateNode.Text() // Пример: "04 июня, 10:51"
+						dateTextRaw = dateNode.Text()
 						if dateTextRaw != "" {
-							// Преобразуем "04 июня, 10:51" в RFC3339-подобный формат с текущим годом
-							// или лучше сразу парсить
 							currentYear := time.Now().Year()
-							fullDateStr := fmt.Sprintf("%s %d", dateTextRaw, currentYear) // "04 июня, 10:51 2025"
+							fullDateStr := fmt.Sprintf("%s %d", dateTextRaw, currentYear)
 
-							for rus, eng := range RussianMonths { // RussianMonths из utils
-								fullDateStr = strings.Replace(fullDateStr, rus, eng, 1) // "04 06, 10:51 2025"
+							for rus, eng := range RussianMonths {
+								fullDateStr = strings.Replace(fullDateStr, rus, eng, 1)
 							}
-							fullDateStr = strings.Replace(fullDateStr, ",", "", 1) // "04 06 10:51 2025"
+							fullDateStr = strings.Replace(fullDateStr, ",", "", 1)
 
 							layout := "02 01 15:04 2006"
 							locationMSK := time.FixedZone("MSK", 3*60*60)
@@ -327,7 +306,7 @@ func getPageRbc(links []string) []Data {
 					}
 
 					dateToParse := strings.TrimSpace(dateTextRaw)
-					if dateToParse != "" && parsDate.IsZero() { // Только если не смогли распарсить новый формат
+					if dateToParse != "" && parsDate.IsZero() {
 						parsedTime, parseErr := time.Parse(time.RFC3339, dateToParse)
 						if parseErr != nil {
 							dateParseError = fmt.Errorf("не удалось спарсить RFC3339 '%s': %v", dateToParse, parseErr)
@@ -339,8 +318,8 @@ func getPageRbc(links []string) []Data {
 					}
 				}
 
-				if len(tags) == 0 { // Если теги не были извлечены из __NEXT_DATA__
-					doc.Find(".article__tags__container a.article__tags__item, .article__tags a.article__tag, .tags__list a.tags__link, .tabs-content a.tag").Each(func(_ int, s *goquery.Selection) { // Добавлен селектор для тегов нового формата
+				if len(tags) == 0 {
+					doc.Find(".article__tags__container a.article__tags__item, .article__tags a.article__tag, .tags__list a.tags__link, .tabs-content a.tag").Each(func(_ int, s *goquery.Selection) {
 						tagText := strings.TrimSpace(s.Text())
 						if tagText != "" {
 							tags = append(tags, tagText)
@@ -352,18 +331,26 @@ func getPageRbc(links []string) []Data {
 					dateParseError = nil
 				}
 
-				if dateParseError != nil && parsDate.IsZero() { // Логируем ошибку только если дата действительно не спарсилась
+				if dateParseError != nil && parsDate.IsZero() {
 					fmt.Printf("%s[RBC]%s[WARNING] Ошибка парсинга даты на %s: %v%s\n", ColorBlue, ColorYellow, pageURL, dateParseError, ColorReset)
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultRbc{Data: Data{
+					dataItem := Data{
+						Site:  rbcURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultRbc{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultRbc{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

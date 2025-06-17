@@ -18,11 +18,9 @@ const (
 
 func UraMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksUra()
-
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[URA]%s[INFO] Парсер URA.RU завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[URA]%s[INFO] Парсер URA.RU заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksUra() []Data {
@@ -113,7 +111,7 @@ func getPageUra(links []string) []Data {
 
 	for i := 0; i < actualNumWorkers; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func() {
 			defer wg.Done()
 			for pageURL := range linkChan {
 				var title, body string
@@ -169,13 +167,21 @@ func getPageUra(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultUra{Data: Data{
+					dataItem := Data{
+						Site:  uraURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultUra{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultUra{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -199,7 +205,7 @@ func getPageUra(links []string) []Data {
 					resultsChan <- pageParseResultUra{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}
 			}
-		}(i)
+		}()
 	}
 
 	go func() {

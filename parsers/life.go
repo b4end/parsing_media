@@ -3,7 +3,7 @@ package parsers
 import (
 	"fmt"
 	"net/http"
-	. "parsing_media/utils" // Убедитесь, что путь к utils правильный
+	. "parsing_media/utils"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +13,7 @@ import (
 
 const (
 	lifeURL         = "https://life.ru"
-	lifeNewsPageURL = "https://life.ru/s/novosti/last" // Обновленная ссылка
+	lifeNewsPageURL = "https://life.ru/s/novosti/last"
 	numWorkersLife  = 10
 )
 
@@ -21,13 +21,13 @@ func LifeMain() {
 	totalStartTime := time.Now()
 	_ = getLinksLife()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[LIFE]%s[INFO] Парсер Life.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[LIFE]%s[INFO] Парсер Life.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksLife() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
-	linkSelector := "div.styles_postsList__MBykd a.styles_root__2aHN8" // Селектор для ссылок на главной
+	linkSelector := "div.styles_postsList__MBykd a.styles_root__2aHN8"
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -47,7 +47,7 @@ func getLinksLife() []Data {
 	doc.Find(linkSelector).Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
-			if strings.HasPrefix(href, "/p/") { // Ссылки вида /p/1758707
+			if strings.HasPrefix(href, "/p/") {
 				fullLink := lifeURL + href
 				if !seenLinks[fullLink] {
 					seenLinks[fullLink] = true
@@ -82,7 +82,7 @@ func getPageLife(links []string) []Data {
 	}
 
 	tagsAreMandatory := true
-	locationMSK := time.FixedZone("MSK", 3*60*60) // UTC+3 для Москвы
+	locationMSK := time.FixedZone("MSK", 3*60*60)
 
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
@@ -111,7 +111,7 @@ func getPageLife(links []string) []Data {
 
 	for i := 0; i < actualNumWorkers; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func() {
 			defer wg.Done()
 			for pageURL := range linkChan {
 				var title, body string
@@ -148,7 +148,7 @@ func getPageLife(links []string) []Data {
 
 				if strings.Contains(dateToParse, "сегодня в") {
 					timeStr := strings.Replace(dateToParse, "сегодня в ", "", 1)
-					fullDateStr := fmt.Sprintf("%02d.%02d.%d %s", now.Day(), int(now.Month()), now.Year(), timeStr) // int(now.Month()) для числового представления
+					fullDateStr := fmt.Sprintf("%02d.%02d.%d %s", now.Day(), int(now.Month()), now.Year(), timeStr)
 					parsedTime, parseErr := time.ParseInLocation("02.01.2006 15:04", fullDateStr, locationMSK)
 					if parseErr != nil {
 						dateParseError = fmt.Errorf("ошибка парсинга 'сегодня': %w, строка: '%s'", parseErr, fullDateStr)
@@ -158,7 +158,7 @@ func getPageLife(links []string) []Data {
 				} else if strings.Contains(dateToParse, "вчера в") {
 					yesterday := now.AddDate(0, 0, -1)
 					timeStr := strings.Replace(dateToParse, "вчера в ", "", 1)
-					fullDateStr := fmt.Sprintf("%02d.%02d.%d %s", yesterday.Day(), int(yesterday.Month()), yesterday.Year(), timeStr) // int(now.Month()) для числового представления
+					fullDateStr := fmt.Sprintf("%02d.%02d.%d %s", yesterday.Day(), int(yesterday.Month()), yesterday.Year(), timeStr)
 					parsedTime, parseErr := time.ParseInLocation("02.01.2006 15:04", fullDateStr, locationMSK)
 					if parseErr != nil {
 						dateParseError = fmt.Errorf("ошибка парсинга 'вчера': %w, строка: '%s'", parseErr, fullDateStr)
@@ -168,23 +168,17 @@ func getPageLife(links []string) []Data {
 				} else if dateToParse != "" {
 					parts := strings.Split(dateToParse, ",")
 					if len(parts) == 2 {
-						dayMonthPart := strings.TrimSpace(parts[0])   // "5 июня"
-						timePart := strings.TrimSpace(parts[1])       // "15:17"
-						dayMonthParts := strings.Fields(dayMonthPart) // ["5", "июня"]
+						dayMonthPart := strings.TrimSpace(parts[0])
+						timePart := strings.TrimSpace(parts[1])
+						dayMonthParts := strings.Fields(dayMonthPart)
 						if len(dayMonthParts) == 2 {
 							dayStr := dayMonthParts[0]
-							monthRu := dayMonthParts[1] // "июня"
-							// monthEn ДОЛЖЕН быть "June", "July" и т.д. из russianMonthsLife
+							monthRu := dayMonthParts[1]
 							monthEn, ok := RussianMonthsLife[strings.ToLower(monthRu)]
 							if ok {
-								// fullDateStrToParse должен быть вида "5 June 2025 15:17"
 								fullDateStrToParse := fmt.Sprintf("%s %s %d %s", dayStr, monthEn, now.Year(), timePart)
-								// Формат парсинга "2 January 2006 15:04" ожидает текстовое название месяца
 								parsedTime, parseErr := time.ParseInLocation("2 January 2006 15:04", fullDateStrToParse, locationMSK)
 								if parseErr != nil {
-									// Если здесь ошибка, и fullDateStrToParse содержит числовой месяц (напр. "5 06 2025 15:17"),
-									// значит monthEn из russianMonthsLife было числом ("06"), а не названием ("June").
-									// Это указывает на неверные данные в russianMonthsLife.
 									dateParseError = fmt.Errorf("ошибка парсинга даты '%s' форматом '2 January 2006 15:04': %w", fullDateStrToParse, parseErr)
 								} else {
 									parsDate = parsedTime
@@ -214,13 +208,21 @@ func getPageLife(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultLife{Data: Data{
+					dataItem := Data{
+						Site:  lifeURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultLife{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultLife{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -244,7 +246,7 @@ func getPageLife(links []string) []Data {
 					resultsChan <- pageParseResultLife{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}
 			}
-		}(i)
+		}()
 	}
 
 	go func() {

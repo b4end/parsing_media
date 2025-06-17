@@ -3,10 +3,12 @@ package utils
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,7 @@ import (
 // Data определяет структуру для хранения данных о продукте
 type Data struct {
 	Hash  string
+	Site  string
 	Href  string
 	Title string
 	Body  string
@@ -71,6 +74,23 @@ var RussianMonthsLife = map[string]string{
 	"октября":  "October",
 	"ноября":   "November",
 	"декабря":  "December",
+}
+
+func (d *Data) Hashing() (string, error) {
+	var builder strings.Builder
+
+	builder.WriteString(d.Title)
+	builder.WriteString(d.Body)
+	builder.WriteString(strconv.FormatInt(d.Date.Unix(), 10))
+
+	hasher := sha256.New()
+
+	if _, err := io.WriteString(hasher, builder.String()); err != nil {
+		return "", fmt.Errorf("ошибка записи данных в хешер: %w", err)
+	}
+	hashBytes := hasher.Sum(nil)
+
+	return fmt.Sprintf("%x", hashBytes), nil
 }
 
 func GetHTMLForClient(client *http.Client, pageUrl string) (*goquery.Document, error) {

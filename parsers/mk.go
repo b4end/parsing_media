@@ -23,9 +23,7 @@ const (
 
 func MKMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksMK()
-
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[MK]%s[INFO] Парсер MK.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
@@ -289,13 +287,21 @@ func getPageMK(links []string) []Data {
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() {
-					resultsChan <- pageParseResultMK{Data: Data{
+					dataItem := Data{
+						Site:  mkURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultMK{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultMK{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

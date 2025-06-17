@@ -135,7 +135,7 @@ func getPageVesti(links []string) []Data {
 				title = strings.TrimSpace(doc.Find("h1.article__title").First().Text())
 
 				var bodyBuilder strings.Builder
-				doc.Find("div.js-mediator-article").Find("p, blockquote").Each(func(_ int, s *goquery.Selection) {
+				doc.Find("div.js-mediator-article > p, div.js-mediator-article > blockquote").Each(func(_ int, s *goquery.Selection) {
 					partText := strings.TrimSpace(s.Text())
 					if partText != "" {
 						if bodyBuilder.Len() > 0 {
@@ -218,13 +218,21 @@ func getPageVesti(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultVesti{Data: Data{
+					dataItem := Data{
+						Site:  vestiURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultVesti{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultVesti{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

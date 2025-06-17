@@ -186,13 +186,21 @@ func getPageDumaTV(links []string) []Data {
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) != 0) {
-					resultsChan <- pageParseResultDumaTV{Data: Data{
+					dataItem := Data{
+						Site:  dumatvURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultDumaTV{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultDumaTV{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

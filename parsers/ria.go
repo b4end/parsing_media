@@ -82,7 +82,7 @@ func getPageRia(links []string) []Data {
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
 	dateLayout := "15:04 02.01.2006"
-	tagsAreMandatory := true // RIA usually has tags
+	tagsAreMandatory := true
 
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
@@ -168,13 +168,21 @@ func getPageRia(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultRia{Data: Data{
+					dataItem := Data{
+						Site:  riaURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultRia{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultRia{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

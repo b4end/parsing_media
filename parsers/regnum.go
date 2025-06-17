@@ -19,7 +19,6 @@ const (
 	numWorkersRegnum  = 10
 )
 
-// russianMonthsRegnum для парсинга дат с Regnum
 var russianMonthsRegnum = map[string]string{
 	"января":   "January",
 	"февраля":  "February",
@@ -39,7 +38,7 @@ func RegnumMain() {
 	totalStartTime := time.Now()
 	_ = getLinksRegnum()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[REGNUM]%s[INFO] Парсер Regnum.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[REGNUM]%s[INFO] Парсер Regnum.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksRegnum() []Data {
@@ -92,15 +91,14 @@ type pageParseResultRegnum struct {
 
 func parseRegnumDate(dateStr string, loc *time.Location) (time.Time, error) {
 	dateStr = strings.TrimSpace(dateStr)
-	// Пример: "6 июня, 2025, 15:18"
 	parts := strings.Split(dateStr, ",")
 	if len(parts) < 3 {
 		return time.Time{}, fmt.Errorf("неверный формат строки даты, ожидалось как минимум 3 части через запятую: '%s'", dateStr)
 	}
 
-	dayMonthPart := strings.TrimSpace(parts[0]) // "6 июня"
-	yearPart := strings.TrimSpace(parts[1])     // "2025"
-	timePart := strings.TrimSpace(parts[2])     // "15:18"
+	dayMonthPart := strings.TrimSpace(parts[0])
+	yearPart := strings.TrimSpace(parts[1])
+	timePart := strings.TrimSpace(parts[2])
 
 	dayMonthFields := strings.Fields(dayMonthPart)
 	if len(dayMonthFields) != 2 {
@@ -119,9 +117,8 @@ func parseRegnumDate(dateStr string, loc *time.Location) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("не удалось преобразовать год '%s' в число: %w", yearPart, err)
 	}
 
-	// Собираем строку для парсинга: "6 June 2025 15:18"
 	fullDateToParse := fmt.Sprintf("%s %s %d %s", dayStr, monthEn, year, timePart)
-	layout := "2 January 2006 15:04" // Пробел важен
+	layout := "2 January 2006 15:04"
 
 	parsedTime, err := time.ParseInLocation(layout, fullDateToParse, loc)
 	if err != nil {
@@ -139,7 +136,7 @@ func getPageRegnum(links []string) []Data {
 		return products
 	}
 
-	tagsAreMandatory := false // Ставим false, так как теги не были предоставлены и могут отсутствовать
+	tagsAreMandatory := false
 	locationMSK := time.FixedZone("MSK", 3*60*60)
 
 	httpClient := &http.Client{
@@ -169,11 +166,11 @@ func getPageRegnum(links []string) []Data {
 
 	for i := 0; i < actualNumWorkers; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func() {
 			defer wg.Done()
 			for pageURL := range linkChan {
 				var title, body string
-				var tags []string // Оставляем пустым, если тегов нет
+				var tags []string
 				var parsDate time.Time
 				var dateParseError error
 				var dateStringToParse string
@@ -188,11 +185,8 @@ func getPageRegnum(links []string) []Data {
 
 				articleTextNode := doc.Find("div.article-text").First()
 
-				// Извлечение даты из первого <p> span.article-info-line
 				dateInfoLine := articleTextNode.Find("p span.article-info-line").First().Text()
 				if dateInfoLine != "" {
-					// Извлекаем только часть с датой и временем, например "6 июня, 2025, 15:18"
-					// "Магас, 6 июня, 2025, 15:18 — ИА Регнум."
 					re := regexp.MustCompile(`,\s*(\d+\s+[а-яА-Я]+,\s*\d{4},\s*\d{2}:\d{2})`)
 					matches := re.FindStringSubmatch(dateInfoLine)
 					if len(matches) > 1 {
@@ -209,17 +203,12 @@ func getPageRegnum(links []string) []Data {
 				} else {
 					dateParseError = fmt.Errorf("не найден span.article-info-line с датой")
 				}
-				if dateParseError != nil {
-					//fmt.Printf("%s[REGNUM]%s[WARNING] Ошибка парсинга даты: '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateStringToParse, pageURL, dateParseError, ColorReset)
-				}
 
 				var bodyBuilder strings.Builder
 				articleTextNode.Find("p").Each(func(idx int, pSelection *goquery.Selection) {
-					// Пропускаем первый <p>, если он содержит информацию о дате
 					if pSelection.Find("span.article-info-line").Length() > 0 {
 						return
 					}
-					// Пропускаем <p>, если это обертка для рекламы или картинки (хотя обычно они в div)
 					if pSelection.Find("div.picture-wrapper, div.adv-container-wrapper").Length() > 0 {
 						return
 					}
@@ -234,22 +223,22 @@ func getPageRegnum(links []string) []Data {
 				})
 				body = bodyBuilder.String()
 
-				// Теги: если найдете селектор, добавьте сюда. Пока оставляем пустыми.
-				// doc.Find("your_tag_selector_here").Each(func(_ int, s *goquery.Selection) {
-				// 	tagText := strings.TrimSpace(s.Text())
-				// 	if tagText != "" {
-				// 		tags = append(tags, tagText)
-				// 	}
-				// })
-
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultRegnum{Data: Data{
+					dataItem := Data{
+						Site:  regnumURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultRegnum{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultRegnum{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -267,14 +256,13 @@ func getPageRegnum(links []string) []Data {
 						}
 						reasons = append(reasons, reasonDate)
 					}
-					if tagsAreMandatory && len(tags) == 0 {
-						// Это условие не будет срабатывать, если tagsAreMandatory = false
+					if tagsAreMandatory && len(tags) > 0 {
 						reasons = append(reasons, "Tags:false")
 					}
 					resultsChan <- pageParseResultRegnum{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}
 			}
-		}(i)
+		}()
 	}
 
 	go func() {

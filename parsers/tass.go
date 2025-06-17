@@ -17,19 +17,16 @@ import (
 const (
 	tassBaseURL     = "https://tass.ru"
 	tassNewsPageURL = "https://tass.ru/novosti-dnya"
-
 	numWorkersTass  = 5
 	chromedpTimeout = 60 * time.Second
-	pageLoadTimeout = 25 * time.Second
+	pageLoadTimeout = 30 * time.Second
 )
 
 func TassMain() {
 	totalStartTime := time.Now()
-
 	_ = getLinksTass()
-
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[TASS]%s[INFO] Парсер TASS.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[TASS]%s[INFO] Парсер TASS.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksTass() []Data {
@@ -92,8 +89,6 @@ func getLinksTass() []Data {
 
 	if len(foundLinks) == 0 {
 		fmt.Printf("%s[TASS]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, tassNewsPageURL, ColorReset)
-	} else {
-
 	}
 
 	return getPageTass(foundLinks, browserCtx)
@@ -210,28 +205,21 @@ func getPageTass(links []string, parentBrowserCtx context.Context) []Data {
 					chromedp.WaitVisible(titleSelector, chromedp.ByQuery),
 					chromedp.WaitVisible(articleBodySelector, chromedp.ByQuery),
 					chromedp.WaitVisible(dateSelector, chromedp.ByQuery),
-
 					chromedp.Text(titleSelector, &title, chromedp.ByQuery),
-
 					chromedp.Evaluate(fmt.Sprintf(`
 						Array.from(document.querySelectorAll('%s %s')).map(el => el.innerText.trim()).filter(p => p.length > 0)
 					`, articleBodySelector, paragraphSelector), &articlePTexts),
-
 					chromedp.Text(dateSelector, &dateTextRaw, chromedp.ByQuery),
-
 					chromedp.ActionFunc(func(ctx context.Context) error {
 						var tempTagTexts []string
-
 						var tagContainerNodes []*cdp.Node
 						errNodes := chromedp.Nodes(tagsContainerSelector, &tagContainerNodes, chromedp.ByQuery, chromedp.AtLeast(0)).Do(ctx)
 						if errNodes != nil {
-							// fmt.Printf("Debug: Error checking tag container nodes: %v for URL %s\n", errNodes, pageURL)
 						}
 
-						if len(tagContainerNodes) > 0 { // Если контейнер тегов найден
+						if len(tagContainerNodes) > 0 {
 							errEval := chromedp.Evaluate(tagsSelectorJS, &tempTagTexts).Do(ctx)
 							if errEval != nil {
-								// fmt.Printf("Debug: Error evaluating tags JS for URL %s: %v\n", pageURL, errEval)
 							}
 						}
 						tagTexts = tempTagTexts
@@ -274,13 +262,21 @@ func getPageTass(links []string, parentBrowserCtx context.Context) []Data {
 				taskCancel()
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tagTexts) > 0) {
-					resultsChan <- pageParseResultTass{Data: Data{
+					dataItem := Data{
+						Site:  tassBaseURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tagTexts,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultTass{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+					} else {
+						dataItem.Hash = hash
+						resultsChan <- pageParseResultTass{Data: dataItem}
+					}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -318,14 +314,12 @@ func getPageTass(links []string, parentBrowserCtx context.Context) []Data {
 		if result.Error != nil {
 			errItems = append(errItems, fmt.Sprintf("%s (%s)", result.PageURL, result.Error.Error()))
 		} else if result.IsEmpty {
-			// fmt.Printf("%s[TASS]%s[DEBUG] Страница без данных: %s (причины: %s)%s\n", ColorBlue, ColorCyan, result.PageURL, strings.Join(result.Reasons, ", "), ColorReset)
 		} else {
 			articles = append(articles, result.Data)
 		}
 	}
 
 	if len(articles) > 0 {
-		//fmt.Printf("%s[TASS]%s[INFO] Собрано %d статей.%s\n", ColorBlue, ColorGreen, len(articles), ColorReset)
 		if len(errItems) > 0 {
 			fmt.Printf("%s[TASS]%s[WARNING] Не удалось обработать или отсутствовали критичные данные для %d из %d страниц:%s\n", ColorBlue, ColorYellow, len(errItems), totalLinks, ColorReset)
 			for idx, itemMessage := range errItems {

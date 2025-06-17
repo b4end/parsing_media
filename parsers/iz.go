@@ -13,7 +13,7 @@ import (
 
 const (
 	izURL         = "https://iz.ru"
-	izNewsPageURL = "https://iz.ru/news" // Это основная страница ленты новостей
+	izNewsPageURL = "https://iz.ru/news"
 	numWorkersIz  = 10
 )
 
@@ -21,19 +21,15 @@ func IzMain() {
 	totalStartTime := time.Now()
 	_ = getLinksIz()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[IZ]%s[INFO] Парсер IZ.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[IZ]%s[INFO] Парсер IZ.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksIz() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
-	// Попробуем несколько селекторов, так как структура может меняться или быть разной для разных блоков
-	// Селектор 1: для основного блока новостей на странице /news
 	linkSelector1 := "div.view-content div.node__cart__item a.node__cart__item__inside"
-	// Селектор 2: для блока "Последние новости" (если он все-таки рендерится статически)
 	linkSelector2 := "div.short-last-news__inside__list__item a.short-last-news__inside__list__item"
-	// Селектор 3: более общий для карточек новостей
 	linkSelector3 := "a.node__cart__item__inside"
 
 	client := &http.Client{
@@ -77,17 +73,14 @@ func getLinksIz() []Data {
 		processLinks(s, "1")
 	})
 
-	// Если первый селектор не дал много результатов, пробуем второй
-	if len(foundLinks) < 5 { // Пороговое значение, можно настроить
+	if len(foundLinks) < 5 {
 		doc.Find(linkSelector2).Each(func(i int, s *goquery.Selection) {
 			processLinks(s, "2")
 		})
 	}
 
-	// И третий, если все еще мало
 	if len(foundLinks) < 5 {
 		doc.Find(linkSelector3).Each(func(i int, s *goquery.Selection) {
-			// Этот селектор может быть слишком общим, добавим проверку, что родитель - это карточка новости
 			if s.Closest("div.node__cart__item").Length() > 0 {
 				processLinks(s, "3")
 			}
@@ -96,8 +89,6 @@ func getLinksIz() []Data {
 
 	if len(foundLinks) == 0 {
 		fmt.Printf("%s[IZ]%s[WARNING] Не найдено ссылок ни с одним из селекторов на странице %s.%s\n", ColorBlue, ColorYellow, izNewsPageURL, ColorReset)
-	} else {
-		//fmt.Printf("%s[IZ]%s[INFO] Найдено %d уникальных ссылок на странице %s.%s\n", ColorBlue, ColorGreen, len(foundLinks), izNewsPageURL, ColorReset)
 	}
 
 	return getPageIz(foundLinks)
@@ -166,7 +157,7 @@ func getPageIz(links []string) []Data {
 				if title == "" {
 					title = strings.TrimSpace(doc.Find("h1[itemprop='headline']").First().Text())
 				}
-				if title == "" { // Альтернативный селектор для заголовков в других структурах, если основной не сработает
+				if title == "" {
 					title = strings.TrimSpace(doc.Find(".article_page__title span").First().Text())
 				}
 				if title == "" {
@@ -181,7 +172,7 @@ func getPageIz(links []string) []Data {
 					if s.Parent().Parent().HasClass("more_style_one") {
 						return
 					}
-					if s.Find("a[href*='t.me/izvestia']").Length() > 0 { // Исключаем ссылки на телеграм канал
+					if s.Find("a[href*='t.me/izvestia']").Length() > 0 {
 						return
 					}
 
@@ -195,7 +186,7 @@ func getPageIz(links []string) []Data {
 				})
 				body = bodyBuilder.String()
 				if body == "" {
-					doc.Find("div[itemprop='articleBody'] p").Each(func(j int, s *goquery.Selection) { // Более общий поиск <p> внутри articleBody
+					doc.Find("div[itemprop='articleBody'] p").Each(func(j int, s *goquery.Selection) {
 						if s.Find("iframe.igi-player").Length() > 0 || s.Parent().Parent().HasClass("more_style_one") || s.Find("a[href*='t.me/izvestia']").Length() > 0 {
 							return
 						}
@@ -215,7 +206,7 @@ func getPageIz(links []string) []Data {
 				if datetimeExists {
 					dateTextRaw = datetimeAttr
 				} else {
-					datetimeAttr, datetimeExists = doc.Find("time[itemprop='datePublished']").First().Attr("datetime") // Альтернативный селектор
+					datetimeAttr, datetimeExists = doc.Find("time[itemprop='datePublished']").First().Attr("datetime")
 					if datetimeExists {
 						dateTextRaw = datetimeAttr
 					} else {
@@ -228,13 +219,10 @@ func getPageIz(links []string) []Data {
 				dateToParse := strings.TrimSpace(dateTextRaw)
 
 				if dateToParse != "" {
-					// Сначала пытаемся парсить как RFC3339 (стандарт для datetime атрибута)
-					// Формат RFC3339 может содержать информацию о часовом поясе, включая 'Z' для UTC
 					parsedTime, parseErr := time.Parse(time.RFC3339, dateToParse)
 					if parseErr == nil {
-						parsDate = parsedTime // Если успешно, время будет с тем поясом, что указан в строке
+						parsDate = parsedTime
 					} else {
-						// Если не RFC3339, пробуем наш кастомный парсинг
 						tempDateStr := dateToParse
 						for rusM, engMNum := range RussianMonths {
 							tempDateStr = strings.ReplaceAll(tempDateStr, rusM, engMNum)
@@ -243,7 +231,7 @@ func getPageIz(links []string) []Data {
 						layoutCustom1 := "2 01 2006, 15:04"
 						layoutCustom2 := "2 01 2006 15:04"
 
-						loc := time.FixedZone("MSK", 3*60*60) // ЯВНО УКАЗЫВАЕМ MSK для текстовых дат без пояса
+						loc := time.FixedZone("MSK", 3*60*60)
 
 						parsedTimeCustom, parseErrCustom := time.ParseInLocation(layoutCustom1, tempDateStr, loc)
 						if parseErrCustom != nil {
@@ -251,18 +239,16 @@ func getPageIz(links []string) []Data {
 							if parseErrCustom != nil {
 								dateParseError = fmt.Errorf("ошибка парсинга даты '%s' (RFC3339: %v, Custom1: %v, Custom2: %v)", dateToParse, parseErr, parseErrCustom, parseErrCustom)
 							} else {
-								parsDate = parsedTimeCustom // Время будет в MSK
+								parsDate = parsedTimeCustom
 							}
 						} else {
-							parsDate = parsedTimeCustom // Время будет в MSK
+							parsDate = parsedTimeCustom
 						}
 					}
 				} else {
 					dateParseError = fmt.Errorf("строка даты пуста")
 				}
 
-				// Если дата была успешно спарсена (неважно, из RFC3339 или кастомно),
-				// и она не в MSK, конвертируем ее в MSK.
 				if !parsDate.IsZero() && parsDate.Location().String() != "MSK" {
 					locationMSK := time.FixedZone("MSK", 3*60*60)
 					parsDate = parsDate.In(locationMSK)
@@ -272,7 +258,7 @@ func getPageIz(links []string) []Data {
 					fmt.Printf("%s[IZ]%s[WARNING] Ошибка парсинга даты: '%s' на %s: %v%s\n", ColorBlue, ColorYellow, dateToParse, pageURL, dateParseError, ColorReset)
 				}
 
-				doc.Find(".hash_tags div[itemprop='about'] a, .article_page__left__tags a").Each(func(_ int, s *goquery.Selection) { // Добавлен .article_page__left__tags a
+				doc.Find(".hash_tags div[itemprop='about'] a, .article_page__left__tags a").Each(func(_ int, s *goquery.Selection) {
 					tagText := strings.TrimSpace(s.Text())
 					if tagText != "" {
 						tags = append(tags, tagText)
@@ -280,13 +266,21 @@ func getPageIz(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultIz{Data: Data{
+					dataItem := Data{
+						Site:  izURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultIz{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultIz{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -335,11 +329,6 @@ func getPageIz(links []string) []Data {
 				fmt.Printf("%s  %d. %s%s\n", ColorYellow, idx+1, itemMessage, ColorReset)
 			}
 		}
-		/*
-			for _, l := range products {
-				fmt.Println(l.Date)
-			}
-		*/
 	} else if totalLinks > 0 {
 		fmt.Printf("%s[IZ]%s[ERROR] Парсинг статей IZ.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 		if len(errItems) > 0 {

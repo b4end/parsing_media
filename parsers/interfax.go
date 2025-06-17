@@ -13,7 +13,7 @@ import (
 
 const (
 	interfaxURL         = "https://www.interfax.ru"
-	interfaxNewsPageURL = "https://www.interfax.ru/news/" // Добавил слеш в конце, как в ссылке
+	interfaxNewsPageURL = "https://www.interfax.ru/news/"
 	numWorkersInterfax  = 10
 )
 
@@ -21,13 +21,12 @@ func InterfaxMain() {
 	totalStartTime := time.Now()
 	_ = getLinksInterfax()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[INTERFAX]%s[INFO] Парсер Interfax.ru завершил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[INTERFAX]%s[INFO] Парсер Interfax.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
 }
 
 func getLinksInterfax() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
-	// Селектор для ссылок внутри блока с классом "an", затем div, затем a
 	linkSelector := "div.an > div > a"
 
 	client := &http.Client{
@@ -50,17 +49,14 @@ func getLinksInterfax() []Data {
 		if exists {
 			fullURL := ""
 			if strings.HasPrefix(href, "/") {
-				// Проверяем, не является ли это ссылкой на другой поддомен interfax, который мы не хотим парсить (например, sport-interfax.ru)
-				// Мы хотим только те, что ведут на основной сайт www.interfax.ru
-				if !strings.HasPrefix(href, "//") && !strings.Contains(href, "sport-interfax.ru") && !strings.Contains(href, "realty.interfax.ru") /* можно добавить другие поддомены для исключения */ {
+				if !strings.HasPrefix(href, "//") && !strings.Contains(href, "sport-interfax.ru") && !strings.Contains(href, "realty.interfax.ru") {
 					fullURL = interfaxURL + href
 				}
-			} else if strings.HasPrefix(href, interfaxURL+"/") { // Явно проверяем основной домен
+			} else if strings.HasPrefix(href, interfaxURL+"/") {
 				fullURL = href
 			}
-			// Игнорируем ссылки, которые ведут на sport-interfax.ru из HTML примера
 			if strings.HasPrefix(href, "https://www.sport-interfax.ru") {
-				fullURL = "" // Обнуляем, чтобы не добавлять
+				fullURL = ""
 			}
 
 			if fullURL != "" {
@@ -99,8 +95,6 @@ func getPageInterfax(links []string) []Data {
 		return products
 	}
 
-	// Пример формата из <meta itemprop="datePublished" content="2025-06-04T17:14:00"> - похоже на RFC3339 без смещения/Z
-	// Текстовый формат: "17:15, 4 июня 2025"
 	tagsAreMandatory := false
 
 	httpClient := &http.Client{
@@ -148,12 +142,9 @@ func getPageInterfax(links []string) []Data {
 
 				var bodyBuilder strings.Builder
 				doc.Find("article[itemprop='articleBody'] p").Each(func(j int, s *goquery.Selection) {
-					// Исключаем пустые <p> или <p> только с <br>
 					if strings.TrimSpace(s.Text()) == "" && s.Find("br").Length() > 0 && s.Children().Length() == s.Find("br").Length() {
 						return
 					}
-					// Исключаем абзацы, которые могут быть подписями к фото или встроенной рекламой, если они имеют специфичные классы или структуру
-					// (пока не видно таких в примере, но можно добавить при необходимости)
 
 					currentTextPart := strings.TrimSpace(s.Text())
 					if currentTextPart != "" {
@@ -166,39 +157,33 @@ func getPageInterfax(links []string) []Data {
 				body = bodyBuilder.String()
 
 				dateTextRaw := ""
-				// Приоритет отдаем meta тегу
 				metaDate, metaDateExists := doc.Find("meta[itemprop='datePublished']").First().Attr("content")
 				if metaDateExists {
-					dateTextRaw = metaDate // "2025-06-04T17:14:00"
+					dateTextRaw = metaDate
 				} else {
-					// Если meta тега нет, пытаемся взять из <time>
-					timeText, timeTextExists := doc.Find("time[datetime]").First().Attr("datetime") // ищем атрибут datetime
+					timeText, timeTextExists := doc.Find("time[datetime]").First().Attr("datetime")
 					if timeTextExists {
 						dateTextRaw = timeText
-					} else { // если нет datetime, берем текст из ссылки внутри time
-						dateTextRaw = strings.TrimSpace(doc.Find("time a.time").First().Text()) // "17:15, 4 июня 2025"
+					} else {
+						dateTextRaw = strings.TrimSpace(doc.Find("time a.time").First().Text())
 					}
 				}
 				dateToParse := strings.TrimSpace(dateTextRaw)
 
-				locationMSK := time.FixedZone("MSK", 3*60*60) // Интерфакс обычно в MSK
+				locationMSK := time.FixedZone("MSK", 3*60*60)
 
 				if dateToParse != "" {
-					// Попытка 1: RFC3339 или похожий формат без явного смещения (предполагаем MSK)
-					// "2025-06-04T17:14:00"
-					layoutRFC := "2006-01-02T15:04:05" // Этот формат подходит для "2025-06-04T17:14:00"
+					layoutRFC := "2006-01-02T15:04:05"
 					parsedTime, parseErr := time.ParseInLocation(layoutRFC, dateToParse, locationMSK)
 
 					if parseErr == nil {
 						parsDate = parsedTime
 					} else {
-						// Попытка 2: для формата "17:15, 4 июня 2025"
 						tempDateStr := dateToParse
 						for rusM, engMNum := range RussianMonths {
 							tempDateStr = strings.ReplaceAll(tempDateStr, rusM, engMNum)
 						}
-						// После замены: "17:15, 4 06 2025"
-						layoutCustom := "15:04, 2 01 2006" // Час:Минута, Число Месяц Год
+						layoutCustom := "15:04, 2 01 2006"
 
 						parsedTimeCustom, parseErrCustom := time.ParseInLocation(layoutCustom, tempDateStr, locationMSK)
 						if parseErrCustom != nil {
@@ -211,9 +196,9 @@ func getPageInterfax(links []string) []Data {
 					dateParseError = fmt.Errorf("строка даты пуста")
 				}
 
-				if !parsDate.IsZero() { // Если дата успешно спарсена
-					parsDate = parsDate.In(locationMSK) // Убедимся, что она точно в MSK
-					dateParseError = nil                // Сбрасываем ошибку, если дата в итоге есть
+				if !parsDate.IsZero() {
+					parsDate = parsDate.In(locationMSK)
+					dateParseError = nil
 				}
 
 				if dateParseError != nil && parsDate.IsZero() {
@@ -228,13 +213,21 @@ func getPageInterfax(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultInterfax{Data: Data{
+					dataItem := Data{
+						Site:  interfaxURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultInterfax{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultInterfax{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

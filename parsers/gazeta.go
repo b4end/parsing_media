@@ -164,13 +164,21 @@ func getPageGazeta(links []string) []Data {
 				}
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatoryForThisParser || len(tags) != 0) {
-					resultsChan <- pageParseResultGazeta{Data: Data{
+					dataItem := Data{
+						Site:  gazetaURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultGazeta{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultGazeta{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

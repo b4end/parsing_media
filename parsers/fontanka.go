@@ -127,7 +127,7 @@ func getPageFontanka(links []string) []Data {
 				title = strings.TrimSpace(doc.Find("h1[class*='title_BgFsr']").First().Text())
 
 				var bodyBuilder strings.Builder
-				doc.Find("div.uiArticleBlockText_5xJo1.text-style-body-1.c-text.block_0DdLJ").Find("p, a, li, blockquote").Each(func(_ int, s *goquery.Selection) {
+				doc.Find("div.uiArticleBlockText_5xJo1.text-style-body-1.c-text.block_0DdLJ").Find("p, li, blockquote").Each(func(_ int, s *goquery.Selection) {
 					partText := strings.TrimSpace(s.Text())
 					if partText != "" {
 						if bodyBuilder.Len() > 0 {
@@ -160,13 +160,21 @@ func getPageFontanka(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() {
-					resultsChan <- pageParseResultFontanka{Data: Data{
+					dataItem := Data{
+						Site:  fontankaURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultFontanka{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultFontanka{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -183,9 +191,6 @@ func getPageFontanka(links []string) []Data {
 							reasonDate = "D:false (attr_missing)"
 						}
 						reasons = append(reasons, reasonDate)
-					}
-					if len(tags) == 0 {
-						// reasons = append(reasons, "Tags:false") // Optional: Fontanka might not always have tags
 					}
 					resultsChan <- pageParseResultFontanka{PageURL: pageURL, IsEmpty: true, Reasons: reasons}
 				}

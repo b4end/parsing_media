@@ -133,7 +133,7 @@ func getPageSmotrim(links []string) []Data {
 				title = strings.TrimSpace(doc.Find("h1.article-main-item__title").First().Text())
 
 				var bodyBuilder strings.Builder
-				doc.Find("div.article-main-item__body").Find("p, blockquote").Each(func(_ int, s *goquery.Selection) {
+				doc.Find("div.article-main-item__body > p, div.article-main-item__body > blockquote").Each(func(_ int, s *goquery.Selection) {
 					partText := strings.TrimSpace(s.Text())
 					if partText != "" {
 						if strings.Contains(partText, "Все видео материалы по теме:") ||
@@ -200,13 +200,21 @@ func getPageSmotrim(links []string) []Data {
 				})
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tags) > 0) {
-					resultsChan <- pageParseResultSmotrim{Data: Data{
+					dataItem := Data{
+						Site:  smotrimURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultSmotrim{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultSmotrim{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

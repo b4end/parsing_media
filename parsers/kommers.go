@@ -196,13 +196,21 @@ func getPageKommers(linkItems []LinkItem) []Data {
 				}
 
 				if allMandatoryFieldsPresent {
-					resultsChan <- pageParseResultKommers{Data: Data{
+					dataItem := Data{
+						Site:  kommersURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  preloadedTags,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultKommers{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+						continue
+					}
+					dataItem.Hash = hash
+					resultsChan <- pageParseResultKommers{Data: dataItem}
 				} else {
 					var reasons []string
 					if title == "" {

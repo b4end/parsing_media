@@ -8,24 +8,23 @@ import (
 	"sync"
 	"time"
 
-	. "parsing_media/utils" // Убедитесь, что путь к вашему пакету utils верный
+	. "parsing_media/utils"
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 )
 
 const (
-	vedomostiBaseURL     = "https://www.vedomosti.ru"
-	vedomostiNewsPageURL = "https://www.vedomosti.ru/newsline"
-
-	numWorkersVedomosti      = 10 // Можно настроить, как в TASS
+	vedomostiBaseURL         = "https://www.vedomosti.ru"
+	vedomostiNewsPageURL     = "https://www.vedomosti.ru/newsline"
+	numWorkersVedomosti      = 10
 	chromedpTimeoutVedomosti = 60 * time.Second
 	pageLoadTimeoutVedomosti = 30 * time.Second
 )
 
 func VedomostiMain() {
 	totalStartTime := time.Now()
-	articles := getLinksVedomosti() // Получаем и используем результат
+	articles := getLinksVedomosti()
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[VEDOMOSTI]%s[INFO] Парсер Vedomosti.ru завершил работу. Собрано статей: %d. Время: (%s)%s\n",
 		ColorBlue, ColorYellow, len(articles), FormatDuration(totalElapsedTime), ColorReset)
@@ -34,7 +33,6 @@ func VedomostiMain() {
 func getLinksVedomosti() []Data {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
-	// Селектор для ссылок на странице ленты: a.news-line__item внутри ul.news-line__list
 	linkSelector := `ul.news-line__list a.news-line__item`
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -57,7 +55,7 @@ func getLinksVedomosti() []Data {
 	var nodes []*cdp.Node
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(vedomostiNewsPageURL),
-		chromedp.WaitVisible(linkSelector, chromedp.ByQuery), // Ждем появления первой ссылки
+		chromedp.WaitVisible(linkSelector, chromedp.ByQuery),
 		chromedp.Nodes(linkSelector, &nodes, chromedp.ByQueryAll),
 	)
 
@@ -70,11 +68,9 @@ func getLinksVedomosti() []Data {
 		href := node.AttributeValue("href")
 		if href != "" {
 			fullURL := href
-			// Ссылки на vedomosti.ru относительные от корня
 			if strings.HasPrefix(href, "/") {
 				fullURL = vedomostiBaseURL + href
 			} else if !strings.HasPrefix(href, "http://") && !strings.HasPrefix(href, "https://") {
-				// Если это не абсолютный URL и не относительный от корня, пропускаем
 				continue
 			}
 
@@ -83,10 +79,7 @@ func getLinksVedomosti() []Data {
 				continue
 			}
 
-			// Проверяем, что ссылка ведет на vedomosti.ru
 			if strings.HasSuffix(parsedURL.Host, "vedomosti.ru") {
-				// Исключаем ссылки, которые могут быть не новостями (например, якоря или спецпроекты без нужной структуры)
-				// Можно добавить более строгие фильтры по пути, если необходимо
 				if !seenLinks[fullURL] {
 					seenLinks[fullURL] = true
 					foundLinks = append(foundLinks, fullURL)
@@ -97,8 +90,6 @@ func getLinksVedomosti() []Data {
 
 	if len(foundLinks) == 0 {
 		fmt.Printf("%s[VEDOMOSTI]%s[WARNING] Не найдено ссылок с селектором '%s' на странице %s.%s\n", ColorBlue, ColorYellow, linkSelector, vedomostiNewsPageURL, ColorReset)
-	} else {
-		//fmt.Printf("%s[VEDOMOSTI]%s[INFO] Найдено %d уникальных ссылок на новости.%s\n", ColorBlue, ColorGreen, len(foundLinks), ColorReset)
 	}
 
 	return getPageVedomosti(foundLinks, browserCtx)
@@ -112,9 +103,6 @@ type pageParseResultVedomosti struct {
 	Reasons []string
 }
 
-// parseVedomostiDate не нужна отдельная функция, т.к. time.Parse справится с RFC3339
-// func parseVedomostiDate(dateStr string) (time.Time, error) { ... }
-
 func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 	var articles []Data
 	var errItems []string
@@ -124,9 +112,7 @@ func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 		return articles
 	}
 
-	// Для Vedomosti дата в UTC+3, time.Parse сам обработает таймзону из строки RFC3339
-	// locationPlus3 := time.FixedZone("UTC+3", 3*60*60) // Не обязательно, если парсим RFC3339
-	tagsAreMandatory := false // Теги часто бывают "хлебными крошками", сделаем их необязательными
+	tagsAreMandatory := false
 
 	resultsChan := make(chan pageParseResultVedomosti, totalLinks)
 	linkChan := make(chan string, totalLinks)
@@ -158,15 +144,9 @@ func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 				var dateParseError error
 
 				titleSelector := `h1.article-headline__title`
-				// Тело статьи: параграфы внутри div.article-boxes-list (может быть и другой родитель)
-				// Более общий вариант: p.box-paragraph__text
 				paragraphSelector := `p.box-paragraph__text`
-				// Селектор для даты: атрибут datetime у тега time.article-meta__date
-				// Возьмем первый такой элемент, предполагая, что это дата статьи
 				dateSelector := `time.article-meta__date`
-				// Теги: текст из <a> внутри span.article-meta__tags, исключая "Главная"
-				tagsContainerSelector := `div.article-meta` // Контейнер, где искать теги
-				// JS для извлечения тегов:
+				tagsContainerSelector := `div.article-meta`
 				tagsSelectorJS := `
 					Array.from(document.querySelectorAll('div.article-meta span.article-meta__tags a'))
 						.map(el => el.innerText.trim())
@@ -176,32 +156,23 @@ func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 				actions := []chromedp.Action{
 					chromedp.Navigate(pageURL),
 					chromedp.WaitVisible(titleSelector, chromedp.ByQuery),
-					// Ждем первый параграф, чтобы убедиться, что тело статьи загрузилось
 					chromedp.WaitVisible(paragraphSelector, chromedp.ByQuery),
 					chromedp.WaitVisible(dateSelector, chromedp.ByQuery),
-
 					chromedp.Text(titleSelector, &title, chromedp.ByQuery),
-
 					chromedp.Evaluate(fmt.Sprintf(`
 						Array.from(document.querySelectorAll('%s')).map(el => el.innerText.trim()).filter(p => p.length > 0)
 					`, paragraphSelector), &articlePTexts),
-
-					// Получаем атрибут 'datetime'
 					chromedp.AttributeValue(dateSelector, "datetime", &dateAttrRaw, nil, chromedp.ByQuery),
-
 					chromedp.ActionFunc(func(ctx context.Context) error {
 						var tempTagTexts []string
-						// Проверим наличие контейнера тегов (хотя JS-селектор уже достаточно специфичен)
 						var tagContainerNodes []*cdp.Node
 						errNodes := chromedp.Nodes(tagsContainerSelector, &tagContainerNodes, chromedp.ByQuery, chromedp.AtLeast(0)).Do(ctx)
 						if errNodes != nil {
-							// Не фатально
 						}
 
-						if len(tagContainerNodes) > 0 || tagsContainerSelector == "" { // Если контейнер есть или не указан
+						if len(tagContainerNodes) > 0 || tagsContainerSelector == "" {
 							errEval := chromedp.Evaluate(tagsSelectorJS, &tempTagTexts).Do(ctx)
 							if errEval != nil {
-								// Не фатально
 							}
 						}
 						tagTexts = tempTagTexts
@@ -232,8 +203,6 @@ func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 
 				dateAttrRaw = strings.TrimSpace(dateAttrRaw)
 				if dateAttrRaw != "" {
-					// Пытаемся распарсить дату из атрибута datetime
-					// Формат RFC3339: "2006-01-02T15:04:05Z07:00"
 					parsedTime, err := time.Parse(time.RFC3339, dateAttrRaw)
 					if err != nil {
 						dateParseError = fmt.Errorf("ошибка парсинга даты '%s': %w", dateAttrRaw, err)
@@ -248,13 +217,21 @@ func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 				taskCancel()
 
 				if title != "" && body != "" && !parsDate.IsZero() && (!tagsAreMandatory || len(tagTexts) > 0) {
-					resultsChan <- pageParseResultVedomosti{Data: Data{
+					dataItem := Data{
+						Site:  vedomostiBaseURL,
 						Href:  pageURL,
 						Title: title,
 						Body:  body,
 						Date:  parsDate,
 						Tags:  tagTexts,
-					}}
+					}
+					hash, err := dataItem.Hashing()
+					if err != nil {
+						resultsChan <- pageParseResultVedomosti{PageURL: pageURL, Error: fmt.Errorf("ошибка генерации хеша: %w", err)}
+					} else {
+						dataItem.Hash = hash
+						resultsChan <- pageParseResultVedomosti{Data: dataItem}
+					}
 				} else {
 					var reasons []string
 					if title == "" {
@@ -292,8 +269,6 @@ func getPageVedomosti(links []string, parentBrowserCtx context.Context) []Data {
 		if result.Error != nil {
 			errItems = append(errItems, fmt.Sprintf("%s (%s)", result.PageURL, result.Error.Error()))
 		} else if result.IsEmpty {
-			// Можно логировать подробно, если нужно
-			// fmt.Printf("%s[VEDOMOSTI]%s[DEBUG] Страница без данных: %s (причины: %s)%s\n", ColorBlue, ColorCyan, result.PageURL, strings.Join(result.Reasons, ", "), ColorReset)
 		} else {
 			articles = append(articles, result.Data)
 		}
