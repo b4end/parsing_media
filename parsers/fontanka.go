@@ -124,7 +124,8 @@ func getPageFontanka(links []string) []Data {
 					continue
 				}
 
-				title = strings.TrimSpace(doc.Find("h1[class*='title_BgFsr']").First().Text())
+				// ===== ИСПРАВЛЕНО ЗДЕСЬ (Заголовок) =====
+				title = strings.TrimSpace(doc.Find("h1.title_5PHHQ").First().Text())
 
 				var bodyBuilder strings.Builder
 				doc.Find("div.uiArticleBlockText_5xJo1.text-style-body-1.c-text.block_0DdLJ").Find("p, li, blockquote").Each(func(_ int, s *goquery.Selection) {
@@ -152,7 +153,8 @@ func getPageFontanka(links []string) []Data {
 					fmt.Printf("%s[FONTANKA]%s[WARNING] Атрибут 'datetime' не найден у тега 'time.item_psvU3' на %s%s\n", ColorBlue, ColorYellow, pageURL, ColorReset)
 				}
 
-				doc.Find("div.scrollableBlock_oYLvg a.tag_S1lW8").Each(func(_ int, s *goquery.Selection) {
+				// ===== ИСПРАВЛЕНО ЗДЕСЬ (Теги) =====
+				doc.Find("div.uiArticleHeaderTaxonomies_tpGPu a.taxonomy_tpGPu").Each(func(_ int, s *goquery.Selection) {
 					tagText := strings.TrimSpace(s.Text())
 					if tagText != "" {
 						tags = append(tags, tagText)

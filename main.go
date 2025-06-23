@@ -6,186 +6,191 @@ import (
 	"os"
 	"parsing_media/parsers"
 	. "parsing_media/utils"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
+type ParserInfo struct {
+	Name string
+	Func func()
+}
+
+var ParserDefinitions = []ParserInfo{
+	{Name: "RIA", Func: parsers.RiaMain},
+	{Name: "Gazeta", Func: parsers.GazetaMain},
+	{Name: "Lenta", Func: parsers.LentaMain},
+	{Name: "Vesti", Func: parsers.VestiMain},
+	{Name: "Kommersant", Func: parsers.KommersMain},
+	{Name: "MK", Func: parsers.MKMain},
+	{Name: "Fontanka", Func: parsers.FontankaMain},
+	{Name: "Smotrim", Func: parsers.SmotrimMain},
+	{Name: "Banki", Func: parsers.BankiMain},
+	{Name: "DumaTV", Func: parsers.DumaTVMain},
+	{Name: "RBC", Func: parsers.RbcMain},
+	{Name: "Izvestiya", Func: parsers.IzMain},
+	{Name: "Interfax", Func: parsers.InterfaxMain},
+	{Name: "RG", Func: parsers.RGMain},
+	{Name: "KP", Func: parsers.KPMain},
+	{Name: "Ura", Func: parsers.UraMain},
+	{Name: "Life", Func: parsers.LifeMain},
+	{Name: "Regnum", Func: parsers.RegnumMain},
+	{Name: "Tass", Func: parsers.TassMain},
+	{Name: "Vedomosti", Func: parsers.VedomostiMain},
+}
+
+func displayMenu() {
+	fmt.Printf("\n%s--- МЕНЮ ЗАПУСКА ПАРСЕРОВ ---%s\n", ColorYellow, ColorReset)
+	fmt.Printf("!  - Выход\n")
+	fmt.Printf("0  - Запустить все циклично\n")
+	fmt.Println(strings.Repeat("-", 50))
+
+	const columns = 3
+	for i, p := range ParserDefinitions {
+		fmt.Printf("%2d - %-15s", i+1, p.Name)
+		if (i+1)%columns == 0 || i == len(ParserDefinitions)-1 {
+			fmt.Println()
+		}
+	}
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Printf("Ваш выбор: ")
+}
+
 func main() {
-	for true {
-		var num string
-		fmt.Printf("%sMENU BAR%s\n! - Exit\n0 - Run all\n1 - RIA\n2 - Gazeta\n3 - Lenta\n4 - Vesti\n5 - Kommersant\n6 - MK\n7 - Fontanka\n8 - Smotrim\n9 - Banki\n10 - DumaTV\n11 - RBC\n12 - Izvestiya\n13 - Interfax\n14 - RG\n15 - KP\n16 - Ura\n17 - Life\n18 - Regnum\n19 - Tass\n20 - Vedomosti\nOption: ", ColorYellow, ColorReset)
-		fmt.Scan(&num)
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		displayMenu()
+
+		input, _ := reader.ReadString('\n')
+		num := strings.TrimSpace(input)
 
 		switch num {
 		case "!":
+			fmt.Println("Завершение работы.")
 			return
-
 		case "0":
-			interruptChan := make(chan struct{})
-			var interruptOnce sync.Once
-
-			go func() {
-				reader := bufio.NewReader(os.Stdin)
-				_, _ = reader.ReadString('\n')
-				interruptOnce.Do(func() {
-					close(interruptChan)
-				})
-			}()
-
-			keepRunning := true
-			for keepRunning {
-				var wg sync.WaitGroup
-
-				parserJobs := []struct {
-					name string
-					fn   func()
-				}{
-					{"RIA", parsers.RiaMain},
-					{"Gazeta", parsers.GazetaMain},
-					{"Lenta", parsers.LentaMain},
-					{"Vesti", parsers.VestiMain},
-					{"Kommersant", parsers.KommersMain},
-					{"MK", parsers.MKMain},
-					{"Fontanka", parsers.FontankaMain},
-					{"Smotrim", parsers.SmotrimMain},
-					{"Banki", parsers.BankiMain},
-					{"DumaTV", parsers.DumaTVMain},
-					{"RBC", parsers.RbcMain},
-					{"Izvestiya", parsers.IzMain},
-					{"Interfax", parsers.InterfaxMain},
-					{"RG", parsers.RGMain},
-					{"KP", parsers.KPMain},
-					{"Ura", parsers.UraMain},
-					{"Life", parsers.LifeMain},
-					{"Regnum", parsers.RegnumMain},
-					{"Tass", parsers.TassMain},
-					{"Vedomosti", parsers.VedomostiMain},
-				}
-
-				fmt.Printf("\n%s[INFO] Запуск всех парсеров%s\n\n", ColorBlue, ColorReset)
-
-				for _, job := range parserJobs {
-					wg.Add(1)
-					go func(parserName string, parserFunc func()) {
-						defer wg.Done()
-						parserFunc()
-					}(job.name, job.fn)
-				}
-
-				wg.Wait()
-
-				fmt.Printf("%s[INFO] Все парсеры (%d) завершили свою работу.%s\n", ColorBlue, len(parserJobs), ColorReset)
-
-				select {
-				case <-interruptChan:
-					fmt.Printf("%s[INFO] Обнаружено нажатие Enter. Остановка цикла...%s\n", ColorBlue, ColorReset)
-					keepRunning = false
-					continue
-				default:
-				}
-
-				if !keepRunning {
-					break
-				}
-
-				fmt.Printf("%s[INFO] Нажмите Enter для остановки.%s\n", ColorBlue, ColorReset)
-
-				totalWaitDuration := 3 * time.Minute
-				timer := time.NewTimer(totalWaitDuration)
-
-				stopCountdownChan := make(chan struct{})
-				var wgCountdown sync.WaitGroup
-				wgCountdown.Add(1)
-
-				go func() {
-					defer wgCountdown.Done()
-					ticker := time.NewTicker(33 * time.Millisecond)
-					defer ticker.Stop()
-
-					deadline := time.Now().Add(totalWaitDuration)
-
-					for {
-						select {
-						case <-stopCountdownChan:
-							return
-						case <-ticker.C:
-							currentRemaining := time.Until(deadline)
-							if currentRemaining <= 0 {
-								fmt.Printf("\r%s[INFO] До повторного запуска (0m 0.000s)%s", ColorBlue, ColorReset)
-								return
-							}
-							minutes := int(currentRemaining.Minutes())
-							seconds := currentRemaining.Seconds() - float64(minutes*60)
-							fmt.Printf("\r%s[INFO] До повторного запуска (%dm %.3fs)%s", ColorBlue, minutes, seconds, ColorReset)
-						}
-					}
-				}()
-
-				select {
-				case <-interruptChan:
-					interruptOnce.Do(func() { close(interruptChan) })
-
-					close(stopCountdownChan)
-					wgCountdown.Wait()
-
-					fmt.Printf("\n%s[INFO] Обнаружено нажатие Enter. Остановка цикла...%s\n", ColorBlue, ColorReset)
-					keepRunning = false
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-				case <-timer.C:
-					close(stopCountdownChan)
-					wgCountdown.Wait()
-
-					fmt.Printf("\r%s[INFO] До повторного запуска (0m 0.000s)%s\n", ColorBlue, ColorReset)
-					fmt.Printf("%s[INFO] Таймаут истек. Перезапуск парсеров...%s\n", ColorBlue, ColorReset)
-				}
+			runAllParsersInLoop(ParserDefinitions, reader)
+		default:
+			choice, err := strconv.Atoi(num)
+			if err != nil || choice < 1 || choice > len(ParserDefinitions) {
+				fmt.Printf("\n%s[ОШИБКА] Неверный ввод. Пожалуйста, выберите номер из списка.%s\n", ColorRed, ColorReset)
+				time.Sleep(2 * time.Second)
+				continue
 			}
-			interruptOnce.Do(func() { close(interruptChan) })
-			fmt.Printf("\n%s[INFO] Цикл парсинга завершен.%s\n", ColorBlue, ColorReset)
-		case "1":
-			parsers.RiaMain()
-		case "2":
-			parsers.GazetaMain()
-		case "3":
-			parsers.LentaMain()
-		case "4":
-			parsers.VestiMain()
-		case "5":
-			parsers.KommersMain()
-		case "6":
-			parsers.MKMain()
-		case "7":
-			parsers.FontankaMain()
-		case "8":
-			parsers.SmotrimMain()
-		case "9":
-			parsers.BankiMain()
-		case "10":
-			parsers.DumaTVMain()
-		case "11":
-			parsers.RbcMain()
-		case "12":
-			parsers.IzMain()
-		case "13":
-			parsers.InterfaxMain()
-		case "14":
-			parsers.RGMain()
-		case "15":
-			parsers.KPMain()
-		case "16":
-			parsers.UraMain()
-		case "17":
-			parsers.LifeMain()
-		case "18":
-			parsers.RegnumMain()
-		case "19":
-			parsers.TassMain()
-		case "20":
-			parsers.VedomostiMain()
+
+			selectedParser := ParserDefinitions[choice-1]
+			fmt.Printf("\n%s[INFO] Запуск парсера: %s%s\n", ColorBlue, selectedParser.Name, ColorReset)
+			selectedParser.Func()
+			fmt.Printf("\n%s[INFO] Парсер %s завершил работу.%s\n", ColorBlue, selectedParser.Name, ColorReset)
 		}
 	}
+}
+
+func runAllParsersInLoop(parsers []ParserInfo, reader *bufio.Reader) {
+	interruptChan := make(chan struct{})
+	var interruptOnce sync.Once
+
+	go func() {
+		_, _ = reader.ReadString('\n')
+		interruptOnce.Do(func() {
+			close(interruptChan)
+		})
+	}()
+
+	fmt.Printf("\n%s[INFO] Запуск всех парсеров в цикле. Нажмите Enter для остановки после текущей итерации.%s\n", ColorBlue, ColorReset)
+
+	keepRunning := true
+	for keepRunning {
+		const totalWaitDuration = 3 * time.Minute
+		// 1. Засекаем время окончания цикла СРАЗУ
+		deadline := time.Now().Add(totalWaitDuration)
+
+		fmt.Printf("\n%s[INFO] Запускаем новую итерацию... Следующий запуск в %s%s\n", ColorBlue, deadline.Format("15:04:05"), ColorReset)
+
+		// 2. Запускаем все парсеры в фоне и получаем канал, который закроется по их завершению
+		parsersDoneChan := make(chan struct{})
+		go func() {
+			var wg sync.WaitGroup
+			for _, p := range parsers {
+				wg.Add(1)
+				go func(parserFunc func()) {
+					defer wg.Done()
+					parserFunc()
+				}(p.Func)
+			}
+			wg.Wait()
+			close(parsersDoneChan) // Сигналим о завершении
+		}()
+
+		// 3. Ждем, пока парсеры завершатся. Позволяем прервать ожидание.
+		select {
+		case <-parsersDoneChan:
+			fmt.Printf("%s[INFO] Все парсеры (%d) завершили свою работу.%s\n", ColorBlue, len(parsers), ColorReset)
+		case <-interruptChan:
+			fmt.Printf("\n%s[INFO] Обнаружен сигнал остановки во время работы парсеров. Ожидаем их завершения...%s\n", ColorYellow, ColorReset)
+			<-parsersDoneChan // Все равно дожидаемся завершения, чтобы не оставлять "висячих" процессов
+			fmt.Printf("%s[INFO] Парсеры завершили работу. Выходим из цикла.%s\n", ColorBlue, ColorReset)
+			keepRunning = false
+			continue // Переходим к следующей итерации (которая будет последней)
+		}
+
+		// 4. Вычисляем оставшееся время и запускаем обратный отсчет
+		remainingDuration := time.Until(deadline)
+		if remainingDuration < 0 {
+			fmt.Printf("%s[WARN] Парсеры работали дольше выделенного времени (%v). Немедленный перезапуск.%s\n", ColorYellow, totalWaitDuration, ColorReset)
+			continue // Сразу переходим к следующей итерации
+		}
+
+		// Блок с таймером на ОСТАВШЕЕСЯ время
+		timer := time.NewTimer(remainingDuration)
+		stopCountdownChan := make(chan struct{})
+		var wgCountdown sync.WaitGroup
+
+		wgCountdown.Add(1)
+		go func() {
+			defer wgCountdown.Done()
+			ticker := time.NewTicker(33 * time.Millisecond)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-stopCountdownChan:
+					return
+				case <-ticker.C:
+					remaining := time.Until(deadline)
+					if remaining <= 0 {
+						fmt.Printf("\r%s[INFO] До повторного запуска: 0m 0.000s%s ", ColorBlue, ColorReset)
+						return
+					}
+					minutes := int(remaining.Minutes())
+					seconds := remaining.Seconds() - float64(minutes*60)
+					fmt.Printf("\r%s[INFO] До повторного запуска: %dm %.3fs%s ", ColorBlue, minutes, seconds, ColorReset)
+				}
+			}
+		}()
+
+		select {
+		case <-timer.C:
+			close(stopCountdownChan)
+			wgCountdown.Wait()
+			fmt.Printf("\r%s[INFO] До повторного запуска: 0m 0.000s%s \n", ColorBlue, ColorReset)
+		case <-interruptChan:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			close(stopCountdownChan)
+			wgCountdown.Wait()
+			fmt.Println()
+			fmt.Printf("%s[INFO] Завершаем цикл...%s\n", ColorBlue, ColorReset)
+			keepRunning = false
+		}
+	}
+
+	fmt.Printf("\n%s[INFO] Цикл парсинга завершен. Возврат в главное меню.%s\n", ColorBlue, ColorReset)
+	time.Sleep(2 * time.Second)
 }

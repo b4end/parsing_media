@@ -18,8 +18,8 @@ const (
 	tassBaseURL     = "https://tass.ru"
 	tassNewsPageURL = "https://tass.ru/novosti-dnya"
 	numWorkersTass  = 5
-	chromedpTimeout = 60 * time.Second
-	pageLoadTimeout = 30 * time.Second
+	chromedpTimeout = 90 * time.Second
+	pageLoadTimeout = 60 * time.Second
 )
 
 func TassMain() {
@@ -193,12 +193,12 @@ func getPageTass(links []string, parentBrowserCtx context.Context) []Data {
 				var parsDate time.Time
 				var dateParseError error
 
-				titleSelector := `h1.NewsHeader_titles__hIY1V`
-				articleBodySelector := `article.Content_wrapper__Cuu3A`
-				paragraphSelector := `p.Paragraph_paragraph__F_jNb`
-				dateSelector := `div.PublishedMark_date__a321B`
-				tagsContainerSelector := `div.Tags_container__lGJcK`
-				tagsSelectorJS := `Array.from(document.querySelectorAll('div.Tags_container__lGJcK a.Tags_tag__uCQVt')).map(el => el.innerText.trim()).filter(tag => tag.length > 0)`
+				titleSelector := `h1.NewsHeader_titles__uKY5F`
+				articleBodySelector := `article.Content_wrapper__DiAVL`
+				paragraphSelector := `p.Paragraph_paragraph__9WAFK`
+				dateSelector := `div.PublishedMark_date__LG42P`
+				tagsContainerSelector := `div.Tags_container__wP7Lb`
+				tagsSelectorJS := `Array.from(document.querySelectorAll('div.Tags_container__wP7Lb a.Tags_tag__o7Dqc')).map(el => el.innerText.trim()).filter(tag => tag.length > 0)`
 
 				actions := []chromedp.Action{
 					chromedp.Navigate(pageURL),
