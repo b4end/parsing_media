@@ -19,12 +19,12 @@ const (
 
 func RGMain() {
 	totalStartTime := time.Now()
-	_ = getLinksRG()
+	articles, links := getLinksRG()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[RG]%s[INFO] Парсер RG.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[RG]%s[INFO] Парсер RG.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksRG() []Data {
+func getLinksRG() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "ul.PageNewsContent_list__P3OgM li.PageNewsContent_item__NmJXl a.PageNewsContentItem_root__oascP"
@@ -85,13 +85,13 @@ type pageParseResultRG struct {
 	Reasons []string
 }
 
-func getPageRG(links []string) []Data {
+func getPageRG(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	dateLayout := "02.01.2006 15:04"
@@ -292,5 +292,5 @@ func getPageRG(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

@@ -19,12 +19,12 @@ const (
 
 func FontankaMain() {
 	totalStartTime := time.Now()
-	_ = getLinksFontanka()
+	articles, links := getLinksFontanka()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[FONTANKA]%s[INFO] Парсер Fontanka.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[FONTANKA]%s[INFO] Парсер Fontanka.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksFontanka() []Data {
+func getLinksFontanka() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -75,13 +75,13 @@ type pageParseResultFontanka struct {
 	Reasons []string
 }
 
-func getPageFontanka(links []string) []Data {
+func getPageFontanka(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	httpClient := &http.Client{
@@ -232,5 +232,5 @@ func getPageFontanka(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }

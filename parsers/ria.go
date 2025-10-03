@@ -19,12 +19,12 @@ const (
 
 func RiaMain() {
 	totalStartTime := time.Now()
-	_ = getLinksRia()
+	articles, links := getLinksRia()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[RIA]%s[INFO] Парсер RIA.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[RIA]%s[INFO] Парсер RIA.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksRia() []Data {
+func getLinksRia() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "a.list-item__title.color-font-hover-only"
@@ -71,13 +71,13 @@ type pageParseResultRia struct {
 	Reasons []string
 }
 
-func getPageRia(links []string) []Data {
+func getPageRia(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
@@ -240,5 +240,5 @@ func getPageRia(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

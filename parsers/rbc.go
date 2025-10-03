@@ -38,12 +38,12 @@ type RbcNextData struct {
 
 func RbcMain() {
 	totalStartTime := time.Now()
-	_ = getLinksRbc()
+	articles, links := getLinksRbc()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[RBC]%s[INFO] Парсер RBC.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[RBC]%s[INFO] Парсер RBC.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksRbc() []Data {
+func getLinksRbc() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := ".js-news-feed-list a.news-feed__item"
@@ -147,13 +147,13 @@ func markdownToPlainText(md string) string {
 	return text
 }
 
-func getPageRbc(links []string) []Data {
+func getPageRbc(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	tagsAreMandatory := false
@@ -408,5 +408,5 @@ func getPageRbc(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

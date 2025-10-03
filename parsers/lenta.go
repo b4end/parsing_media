@@ -19,12 +19,12 @@ const (
 
 func LentaMain() {
 	totalStartTime := time.Now()
-	_ = getLinksLenta()
+	articles, links := getLinksLenta()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[LENTA]%s[INFO] Парсер Lenta.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[LENTA]%s[INFO] Парсер Lenta.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksLenta() []Data {
+func getLinksLenta() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -76,13 +76,13 @@ type pageParseResultLenta struct {
 	Reasons []string
 }
 
-func getPageLenta(links []string) []Data {
+func getPageLenta(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
@@ -258,5 +258,5 @@ func getPageLenta(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }

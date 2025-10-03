@@ -19,12 +19,12 @@ const (
 
 func SmotrimMain() {
 	totalStartTime := time.Now()
-	_ = getLinksSmotrim()
+	articles, links := getLinksSmotrim()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[SMOTRIM]%s[INFO] Парсер Smotrim.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[SMOTRIM]%s[INFO] Парсер Smotrim.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksSmotrim() []Data {
+func getLinksSmotrim() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -77,13 +77,13 @@ type pageParseResultSmotrim struct {
 	Reasons []string
 }
 
-func getPageSmotrim(links []string) []Data {
+func getPageSmotrim(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
@@ -273,5 +273,5 @@ func getPageSmotrim(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }

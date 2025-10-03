@@ -19,12 +19,12 @@ const (
 
 func AifMain() {
 	totalStartTime := time.Now()
-	_ = getLinksAif()
+	articles, links := getLinksAif()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[AIF]%s[INFO] Парсер Aif.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[AIF]%s[INFO] Парсер Aif.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksAif() []Data {
+func getLinksAif() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -74,7 +74,7 @@ type pageParseResultAif struct {
 	Reasons []string
 }
 
-func getPageAif(links []string) []Data {
+func getPageAif(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
@@ -82,7 +82,7 @@ func getPageAif(links []string) []Data {
 	dateTimeStr := "02.01.2006 15:04"
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	httpClient := &http.Client{
@@ -221,5 +221,5 @@ func getPageAif(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }

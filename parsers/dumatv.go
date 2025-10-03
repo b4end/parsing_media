@@ -19,12 +19,12 @@ const (
 
 func DumaTVMain() {
 	totalStartTime := time.Now()
-	_ = getLinksDumaTV()
+	articles, links := getLinksDumaTV()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[DUMATV]%s[INFO] Парсер DumaTV.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[DUMATV]%s[INFO] Парсер DumaTV.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksDumaTV() []Data {
+func getLinksDumaTV() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -77,13 +77,13 @@ type pageParseResultDumaTV struct {
 	Reasons []string
 }
 
-func getPageDumaTV(links []string) []Data {
+func getPageDumaTV(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
@@ -259,5 +259,5 @@ func getPageDumaTV(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }

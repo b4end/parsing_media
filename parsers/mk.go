@@ -23,12 +23,12 @@ const (
 
 func MKMain() {
 	totalStartTime := time.Now()
-	_ = getLinksMK()
+	articles, links := getLinksMK()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[MK]%s[INFO] Парсер MK.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[MK]%s[INFO] Парсер MK.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksMK() []Data {
+func getLinksMK() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -205,13 +205,13 @@ func parseMkDate(dateString string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("failed to parse date '%s' with standard layout (err: %v) or any alternative format", dateString, originalErr)
 }
 
-func getPageMK(links []string) []Data {
+func getPageMK(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	httpClient := &http.Client{
@@ -359,5 +359,5 @@ func getPageMK(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }

@@ -19,12 +19,12 @@ const (
 
 func IzMain() {
 	totalStartTime := time.Now()
-	_ = getLinksIz()
+	articles, links := getLinksIz()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[IZ]%s[INFO] Парсер IZ.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[IZ]%s[INFO] Парсер IZ.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksIz() []Data {
+func getLinksIz() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -102,13 +102,13 @@ type pageParseResultIz struct {
 	Reasons []string
 }
 
-func getPageIz(links []string) []Data {
+func getPageIz(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 	tagsAreMandatory := false
 
@@ -338,5 +338,5 @@ func getPageIz(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

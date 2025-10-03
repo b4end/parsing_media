@@ -18,12 +18,12 @@ const (
 
 func UraMain() {
 	totalStartTime := time.Now()
-	_ = getLinksUra()
+	articles, links := getLinksUra()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[URA]%s[INFO] Парсер URA.RU заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[URA]%s[INFO] Парсер URA.RU заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksUra() []Data {
+func getLinksUra() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "ul li.list-scroll-item > a"
@@ -71,13 +71,13 @@ type pageParseResultUra struct {
 	Reasons []string
 }
 
-func getPageUra(links []string) []Data {
+func getPageUra(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	tagsAreMandatory := true
@@ -241,5 +241,5 @@ func getPageUra(links []string) []Data {
 	if len(products) == 0 && totalLinks > 0 {
 		fmt.Printf("%s[URA]%s[ERROR] Парсинг статей URA.RU завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 	}
-	return products
+	return products, links
 }

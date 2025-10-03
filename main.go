@@ -26,7 +26,6 @@ var ParserDefinitions = []ParserInfo{
 	{Name: "MK", Func: parsers.MKMain},
 	{Name: "Fontanka", Func: parsers.FontankaMain},
 	{Name: "Smotrim", Func: parsers.SmotrimMain},
-	{Name: "Banki", Func: parsers.BankiMain},
 	{Name: "DumaTV", Func: parsers.DumaTVMain},
 	{Name: "RBC", Func: parsers.RbcMain},
 	{Name: "Izvestiya", Func: parsers.IzMain},
@@ -36,8 +35,6 @@ var ParserDefinitions = []ParserInfo{
 	{Name: "Ura", Func: parsers.UraMain},
 	{Name: "Life", Func: parsers.LifeMain},
 	{Name: "Regnum", Func: parsers.RegnumMain},
-	{Name: "Tass", Func: parsers.TassMain},
-	{Name: "Vedomosti", Func: parsers.VedomostiMain},
 	{Name: "AIF", Func: parsers.AifMain},
 }
 

@@ -19,12 +19,12 @@ const (
 
 func GazetaMain() {
 	totalStartTime := time.Now()
-	_ = getLinksGazeta()
+	articles, links := getLinksGazeta()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[GAZETA]%s[INFO] Парсер Gazeta.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[GAZETA]%s[INFO] Парсер Gazeta.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksGazeta() []Data {
+func getLinksGazeta() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 
@@ -73,13 +73,13 @@ type pageParseResultGazeta struct {
 	Reasons []string
 }
 
-func getPageGazeta(links []string) []Data {
+func getPageGazeta(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	tagsAreMandatoryForThisParser := false
@@ -236,5 +236,5 @@ func getPageGazeta(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

@@ -19,12 +19,12 @@ const (
 
 func LifeMain() {
 	totalStartTime := time.Now()
-	_ = getLinksLife()
+	articles, links := getLinksLife()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[LIFE]%s[INFO] Парсер Life.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[LIFE]%s[INFO] Парсер Life.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksLife() []Data {
+func getLinksLife() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "div.styles_postsList__MBykd a.styles_root__2aHN8"
@@ -72,13 +72,13 @@ type pageParseResultLife struct {
 	Reasons []string
 }
 
-func getPageLife(links []string) []Data {
+func getPageLife(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	tagsAreMandatory := true
@@ -282,5 +282,5 @@ func getPageLife(links []string) []Data {
 	if len(products) == 0 && totalLinks > 0 {
 		fmt.Printf("%s[LIFE]%s[ERROR] Парсинг статей Life.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 	}
-	return products
+	return products, links
 }

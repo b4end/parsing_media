@@ -19,12 +19,12 @@ const (
 
 func InterfaxMain() {
 	totalStartTime := time.Now()
-	_ = getLinksInterfax()
+	articles, links := getLinksInterfax()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[INTERFAX]%s[INFO] Парсер Interfax.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[INTERFAX]%s[INFO] Парсер Interfax.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksInterfax() []Data {
+func getLinksInterfax() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "div.an > div > a"
@@ -86,13 +86,13 @@ type pageParseResultInterfax struct {
 	Reasons []string
 }
 
-func getPageInterfax(links []string) []Data {
+func getPageInterfax(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	tagsAreMandatory := false
@@ -285,5 +285,5 @@ func getPageInterfax(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

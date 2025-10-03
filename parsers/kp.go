@@ -22,12 +22,12 @@ const (
 
 func KPMain() {
 	totalStartTime := time.Now()
-	_ = getLinksKP()
+	articles, links := getLinksKP()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[KP]%s[INFO] Парсер KP.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[KP]%s[INFO] Парсер KP.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksKP() []Data {
+func getLinksKP() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "div.sc-lvle83-0 a[href^='/online/news/']"
@@ -115,13 +115,13 @@ func parseRelativeTimeKP(timeStr string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("не удалось распознать формат времени: '%s'", timeStr)
 }
 
-func getPageKP(links []string) []Data {
+func getPageKP(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	locationMSK := time.FixedZone("MSK", 3*60*60)
@@ -321,5 +321,5 @@ func getPageKP(links []string) []Data {
 			}
 		}
 	}
-	return products
+	return products, links
 }

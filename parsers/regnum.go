@@ -36,12 +36,12 @@ var russianMonthsRegnum = map[string]string{
 
 func RegnumMain() {
 	totalStartTime := time.Now()
-	_ = getLinksRegnum()
+	articles, links := getLinksRegnum()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[REGNUM]%s[INFO] Парсер Regnum.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[REGNUM]%s[INFO] Парсер Regnum.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksRegnum() []Data {
+func getLinksRegnum() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "div.news-item div.news-header a.title"
@@ -127,13 +127,13 @@ func parseRegnumDate(dateStr string, loc *time.Location) (time.Time, error) {
 	return parsedTime, nil
 }
 
-func getPageRegnum(links []string) []Data {
+func getPageRegnum(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	tagsAreMandatory := false
@@ -298,5 +298,5 @@ func getPageRegnum(links []string) []Data {
 	if len(products) == 0 && totalLinks > 0 {
 		fmt.Printf("%s[REGNUM]%s[ERROR] Парсинг статей Regnum.ru завершен, но не удалось собрать данные ни с одной из %d страниц.%s\n", ColorBlue, ColorRed, totalLinks, ColorReset)
 	}
-	return products
+	return products, links
 }

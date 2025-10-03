@@ -24,12 +24,12 @@ type LinkItem struct {
 
 func KommersMain() {
 	totalStartTime := time.Now()
-	_ = getLinksKommers()
+	articles, links := getLinksKommers()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[KOMMERSANT]%s[INFO] Парсер Kommersant.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[KOMMERSANT]%s[INFO] Парсер Kommersant.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksKommers() []Data {
+func getLinksKommers() ([]Data, []LinkItem) {
 	var foundLinkItems []LinkItem
 	seenLinks := make(map[string]bool)
 
@@ -45,7 +45,7 @@ func getLinksKommers() []Data {
 	doc, err := GetHTMLForClient(client, kommersURLNews)
 	if err != nil {
 		fmt.Printf("%s[KOMMERSANT]%s[ERROR] Ошибка при получении HTML со страницы %s: %v%s\n", ColorBlue, ColorRed, kommersURLNews, err, ColorReset)
-		return nil
+		return nil, foundLinkItems
 	}
 
 	articleSelector := "article.uho.rubric_lenta__item.js-article"
@@ -105,13 +105,13 @@ type pageParseResultKommers struct {
 	Reasons       []string
 }
 
-func getPageKommers(linkItems []LinkItem) []Data {
+func getPageKommers(linkItems []LinkItem) ([]Data, []LinkItem) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(linkItems)
 
 	if totalLinks == 0 {
-		return products
+		return products, linkItems
 	}
 
 	tagsAreMandatoryForThisParser := true
@@ -268,5 +268,5 @@ func getPageKommers(linkItems []LinkItem) []Data {
 			}
 		}
 	}
-	return products
+	return products, linkItems
 }

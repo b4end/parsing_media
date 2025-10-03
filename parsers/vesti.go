@@ -19,12 +19,12 @@ const (
 
 func VestiMain() {
 	totalStartTime := time.Now()
-	_ = getLinksVesti()
+	articles, links := getLinksVesti()
 	totalElapsedTime := time.Since(totalStartTime)
-	fmt.Printf("%s[VESTI]%s[INFO] Парсер Vesti.ru заверщил работу: (%s)%s\n", ColorBlue, ColorYellow, FormatDuration(totalElapsedTime), ColorReset)
+	fmt.Printf("%s[VESTI]%s[INFO] Парсер Vesti.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
 
-func getLinksVesti() []Data {
+func getLinksVesti() ([]Data, []string) {
 	var foundLinks []string
 	seenLinks := make(map[string]bool)
 	linkSelector := "a.list__pic-wrapper"
@@ -76,13 +76,13 @@ type pageParseResultVesti struct {
 	Reasons []string
 }
 
-func getPageVesti(links []string) []Data {
+func getPageVesti(links []string) ([]Data, []string) {
 	var products []Data
 	var errItems []string
 	totalLinks := len(links)
 
 	if totalLinks == 0 {
-		return products
+		return products, links
 	}
 
 	locationPlus3 := time.FixedZone("UTC+3", 3*60*60)
@@ -295,5 +295,5 @@ func getPageVesti(links []string) []Data {
 		}
 	}
 
-	return products
+	return products, links
 }
