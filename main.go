@@ -38,6 +38,7 @@ var ParserDefinitions = []ParserInfo{
 	{Name: "Regnum", Func: parsers.RegnumMain},
 	{Name: "Tass", Func: parsers.TassMain},
 	{Name: "Vedomosti", Func: parsers.VedomostiMain},
+	{Name: "AIF", Func: parsers.AifMain},
 }
 
 func displayMenu() {
@@ -58,6 +59,15 @@ func displayMenu() {
 }
 
 func main() {
+
+	// Инициализация соединения с БД
+	fmt.Printf("%s[INFO] Инициализация соединения с базой данных...%s\n", ColorBlue, ColorReset)
+	if err := InitDB(); err != nil {
+		fmt.Printf("%s[FATAL] Ошибка подключения к БД: %v%s\n", ColorRed, err, ColorReset)
+		return
+	}
+	fmt.Printf("%s[DB] Соединение с БД установлено. Готовность к работе.%s\n", ColorBlue, ColorReset)
+
 	reader := bufio.NewReader(os.Stdin)
 
 	for {
@@ -68,7 +78,7 @@ func main() {
 
 		switch num {
 		case "!":
-			fmt.Println("Завершение работы.")
+			fmt.Printf("%s[INFO] Завершение работы.%s\n", ColorBlue, ColorReset)
 			return
 		case "0":
 			runAllParsersInLoop(ParserDefinitions, reader)

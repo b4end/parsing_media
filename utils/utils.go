@@ -4,6 +4,7 @@ package utils
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
 	"io"
 	"math/rand"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	_ "github.com/lib/pq"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
@@ -74,6 +76,87 @@ var RussianMonthsLife = map[string]string{
 	"октября":  "October",
 	"ноября":   "November",
 	"декабря":  "December",
+}
+
+// DbConn представляет пул соединений
+var DbConn *sql.DB
+
+// DSN (Data Source Name) - строка подключения БЕЗ пароля (текущие настройки)
+const DSN = "user=postgres dbname=parsing_media_db host=localhost port=5432 sslmode=disable"
+
+// Функция InitDB: Инициализирует соединение с базой данных
+func InitDB() error {
+	var err error
+	DbConn, err = sql.Open("postgres", DSN)
+	if err != nil {
+		return fmt.Errorf("ошибка открытия БД: %w", err)
+	}
+
+	if err = DbConn.Ping(); err != nil {
+		return fmt.Errorf("ошибка проверки соединения с БД: %w", err)
+	}
+
+	// Рекомендуемые настройки
+	DbConn.SetMaxOpenConns(25)
+	DbConn.SetMaxIdleConns(5)
+	DbConn.SetConnMaxLifetime(5 * time.Minute)
+
+	return nil
+}
+
+// Функция SaveData: Сохраняет данные в БД
+func SaveData(products []Data) {
+	if DbConn == nil {
+		fmt.Printf("%s[DB] Соединение с БД не инициализировано.%s\n", ColorRed, ColorReset)
+		return
+	}
+
+	if len(products) == 0 {
+		return
+	}
+
+	fmt.Printf("%s[DB] Сохранение %d записей в БД...%s\n", ColorCyan, len(products), ColorReset)
+
+	// SQL: Вставка, которая игнорирует дубликаты по хешу (ON CONFLICT (hash) DO NOTHING)
+	sqlStatement := `
+    INSERT INTO articles (hash, site, href, title, body, date, tags)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    ON CONFLICT (hash) DO NOTHING;`
+
+	tx, err := DbConn.Begin()
+	if err != nil {
+		fmt.Printf("%s[DB][ERROR] Ошибка начала транзакции: %v%s\n", ColorRed, err, ColorReset)
+		return
+	}
+
+	stmt, err := tx.Prepare(sqlStatement)
+	if err != nil {
+		fmt.Printf("%s[DB][ERROR] Ошибка подготовки запроса: %v%s\n", ColorRed, err, ColorReset)
+		tx.Rollback()
+		return
+	}
+	defer stmt.Close()
+
+	insertedCount := 0
+	for _, p := range products {
+		_, err = stmt.Exec(p.Hash, p.Site, p.Href, p.Title, p.Body, p.Date, p.Tags)
+		if err != nil {
+			// Если ошибка - дубликат по href, просто пропускаем
+			if !strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
+				fmt.Printf("%s[DB][WARN] Ошибка вставки %s: %v%s\n", ColorYellow, LimitString(p.Title, 40), err, ColorReset)
+			}
+			continue
+		}
+		insertedCount++
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		fmt.Printf("%s[DB][ERROR] Ошибка фиксации транзакции: %v%s\n", ColorRed, err, ColorReset)
+		return
+	}
+
+	fmt.Printf("%s[DB] Успешно сохранено %d новых записей (из %d) в БД.%s\n", ColorGreen, insertedCount, len(products), ColorReset)
 }
 
 func (d *Data) Hashing() (string, error) {
