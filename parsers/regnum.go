@@ -37,6 +37,7 @@ var russianMonthsRegnum = map[string]string{
 func RegnumMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksRegnum()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[REGNUM]%s[INFO] Парсер Regnum.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

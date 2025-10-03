@@ -20,6 +20,7 @@ const (
 func SmotrimMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksSmotrim()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[SMOTRIM]%s[INFO] Парсер Smotrim.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

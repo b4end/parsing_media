@@ -20,6 +20,7 @@ const (
 func RiaMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksRia()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[RIA]%s[INFO] Парсер RIA.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

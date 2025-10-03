@@ -20,6 +20,7 @@ const (
 func InterfaxMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksInterfax()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[INTERFAX]%s[INFO] Парсер Interfax.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

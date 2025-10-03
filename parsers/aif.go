@@ -20,6 +20,7 @@ const (
 func AifMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksAif()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[AIF]%s[INFO] Парсер Aif.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

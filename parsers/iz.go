@@ -20,6 +20,7 @@ const (
 func IzMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksIz()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[IZ]%s[INFO] Парсер IZ.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

@@ -20,6 +20,7 @@ const (
 func LentaMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksLenta()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[LENTA]%s[INFO] Парсер Lenta.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

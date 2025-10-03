@@ -20,6 +20,7 @@ const (
 func FontankaMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksFontanka()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[FONTANKA]%s[INFO] Парсер Fontanka.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

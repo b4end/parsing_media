@@ -19,6 +19,7 @@ const (
 func UraMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksUra()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[URA]%s[INFO] Парсер URA.RU заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

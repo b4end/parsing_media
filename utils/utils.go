@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"golang.org/x/net/html/charset"
 	"golang.org/x/text/encoding"
@@ -115,7 +116,7 @@ func SaveData(products []Data) {
 		return
 	}
 
-	fmt.Printf("%s[DB] Сохранение %d записей в БД...%s\n", ColorCyan, len(products), ColorReset)
+	//fmt.Printf("%s[DB] Сохранение %d записей в БД...%s\n", ColorCyan, len(products), ColorReset)
 
 	// SQL: Вставка, которая игнорирует дубликаты по хешу (ON CONFLICT (hash) DO NOTHING)
 	sqlStatement := `
@@ -139,7 +140,7 @@ func SaveData(products []Data) {
 
 	insertedCount := 0
 	for _, p := range products {
-		_, err = stmt.Exec(p.Hash, p.Site, p.Href, p.Title, p.Body, p.Date, p.Tags)
+		_, err = stmt.Exec(p.Hash, p.Site, p.Href, p.Title, p.Body, p.Date, pq.Array(p.Tags))
 		if err != nil {
 			// Если ошибка - дубликат по href, просто пропускаем
 			if !strings.Contains(err.Error(), "duplicate key value violates unique constraint") {
@@ -156,7 +157,7 @@ func SaveData(products []Data) {
 		return
 	}
 
-	fmt.Printf("%s[DB] Успешно сохранено %d новых записей (из %d) в БД.%s\n", ColorGreen, insertedCount, len(products), ColorReset)
+	//fmt.Printf("%s[DB] Успешно сохранено %d новых записей (из %d) в БД.%s\n", ColorGreen, insertedCount, len(products), ColorReset)
 }
 
 func (d *Data) Hashing() (string, error) {

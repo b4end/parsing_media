@@ -20,6 +20,7 @@ const (
 func LifeMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksLife()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[LIFE]%s[INFO] Парсер Life.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

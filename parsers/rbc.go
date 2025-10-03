@@ -39,6 +39,7 @@ type RbcNextData struct {
 func RbcMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksRbc()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[RBC]%s[INFO] Парсер RBC.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

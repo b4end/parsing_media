@@ -23,6 +23,7 @@ const (
 func KPMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksKP()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[KP]%s[INFO] Парсер KP.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

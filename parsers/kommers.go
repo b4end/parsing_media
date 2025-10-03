@@ -25,6 +25,7 @@ type LinkItem struct {
 func KommersMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksKommers()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[KOMMERSANT]%s[INFO] Парсер Kommersant.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

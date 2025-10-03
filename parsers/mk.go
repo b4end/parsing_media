@@ -24,6 +24,7 @@ const (
 func MKMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksMK()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[MK]%s[INFO] Парсер MK.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

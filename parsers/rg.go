@@ -20,6 +20,7 @@ const (
 func RGMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksRG()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[RG]%s[INFO] Парсер RG.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

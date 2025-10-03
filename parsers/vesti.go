@@ -20,6 +20,7 @@ const (
 func VestiMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksVesti()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[VESTI]%s[INFO] Парсер Vesti.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

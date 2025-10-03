@@ -20,6 +20,7 @@ const (
 func GazetaMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksGazeta()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[GAZETA]%s[INFO] Парсер Gazeta.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }

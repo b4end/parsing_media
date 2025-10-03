@@ -20,6 +20,7 @@ const (
 func DumaTVMain() {
 	totalStartTime := time.Now()
 	articles, links := getLinksDumaTV()
+	SaveData(articles)
 	totalElapsedTime := time.Since(totalStartTime)
 	fmt.Printf("%s[DUMATV]%s[INFO] Парсер DumaTV.ru заверщил работу собрав (%d/%d): (%s)%s\n", ColorBlue, ColorYellow, len(articles), len(links), FormatDuration(totalElapsedTime), ColorReset)
 }
